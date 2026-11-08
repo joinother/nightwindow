@@ -3,6 +3,8 @@ import { ScoreResult, City } from '../core/data/Models';
 import { nearestDarkSite, DarkHint } from '../core/data/DarkSites';
 import { FeedbackStore } from '../common/FeedbackStore';
 import { common } from '@kit.AbilityKit';
+import { display } from '@kit.ArkUI';
+import { sensor } from '@kit.SensorServiceKit';
 import { MapComponent, mapCommon, map } from '@kit.MapKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { wgs84ToGcj02, LatLon, distanceKm } from '../core/geo/Coord';
@@ -34,6 +36,8 @@ struct Index {
   @Local insetTop: number = 0;
   @Local insetLeft: number = 0;
   @Local insetRight: number = 0;
+  @Local tiltX: number = 0;   // -1..1 左右倾斜
+  @Local tiltY: number = 0;   // -1..1 前后倾斜
   @Local bgIndex: number = 0;
   @Local pgAlpha: number = 1;
   @Local pgShiftX: number = 0;
@@ -58,6 +62,12 @@ struct Index {
   private mapCtl: map.MapComponentController | null = null;
   private winRef: window.Window | null = null;
   private insetsBound: boolean = false;
+  private tiltBound: boolean = false;
+  private tiltSamples: number = 0;
+  private baseGX: number = 0;
+  private baseGY: number = 0;
+  private hasBase: boolean = false;
+  private screenRot: number = 0;
   private lastSwipeMs: number = 0;
 
   // 系统沉浸式材质：仅 Navigation 标题栏 / 底部 TabBar 生效
@@ -256,6 +266,54 @@ struct Index {
     this.clock = (h < 10 ? '0' : '') + h.toString() + ':' + (m < 10 ? '0' : '') + m.toString();
   }
 
+  /** 重力感应：机身相对"静止姿态"的倾斜映射成 -1..1，做 parallax 3D */
+  private bindTilt(): void {
+    if (this.tiltBound) return;
+    try {
+      this.screenRot = display.getDefaultDisplaySync().rotation;
+      sensor.on(sensor.SensorId.GRAVITY, (d: sensor.GravityResponse) => {
+        if (!this.hasBase) {
+          this.baseGX = d.x;
+          this.baseGY = d.y;
+          this.hasBase = true;
+          return;
+        }
+        // 基线缓慢跟随，握持姿势变了也不会一直偏着
+        this.baseGX = this.baseGX * 0.997 + d.x * 0.003;
+        this.baseGY = this.baseGY * 0.997 + d.y * 0.003;
+
+        const dx: number = d.x - this.baseGX;
+        const dy: number = d.y - this.baseGY;
+
+        // 按屏幕旋转把传感器坐标转到屏幕坐标
+        let hx: number = dx;
+        let vy: number = dy;
+        if (this.screenRot === 1) {          // 横屏（左转）
+          hx = dy; vy = -dx;
+        } else if (this.screenRot === 3) {   // 横屏（右转）
+          hx = -dy; vy = dx;
+        } else if (this.screenRot === 2) {
+          hx = -dx; vy = -dy;
+        }
+
+        const nx: number = Math.max(-1, Math.min(1, hx / 3.0));
+        const ny: number = Math.max(-1, Math.min(1, vy / 3.0));
+        // 低通滤波，避免手抖导致画面颤动
+        this.tiltX = this.tiltX * 0.86 + nx * 0.14;
+        this.tiltY = this.tiltY * 0.86 + ny * 0.14;
+
+        if (this.tiltSamples < 3) {
+          this.tiltSamples = this.tiltSamples + 1;
+          console.info('NightWindow tilt rot=' + this.screenRot + ' raw=' + d.x.toFixed(2) + '/'
+            + d.y.toFixed(2) + ' -> ' + this.tiltX.toFixed(2) + '/' + this.tiltY.toFixed(2));
+        }
+      }, { interval: 50000000 });
+      this.tiltBound = true;
+    } catch (e) {
+      console.warn('tilt sensor unavailable');
+    }
+  }
+
   /** 读取窗口避让区，避免 ☰ / ◎ 压到挖孔或状态栏 */
   private async applySafeInsets(): Promise<void> {
     try {
@@ -283,6 +341,7 @@ struct Index {
       + ' level=' + uiMaterial.getGlobalMaterialLevel());
     this.vm.refresh();
     this.applySafeInsets();
+    this.bindTilt();
     this.checkFeedback();
     this.aboutToAppearClock();
   }
@@ -296,6 +355,8 @@ struct Index {
         .objectFit(ImageFit.Cover)
         .interpolation(ImageInterpolation.High)
         .blur(this.pageIndex === 0 ? 0 : 40)
+        .scale({ x: 1.06, y: 1.06 })
+        .translate({ x: this.tiltX * -10, y: this.tiltY * -10 })
 
       Image(this.bgList[this.bgIndex])
         .width('100%')
@@ -304,6 +365,8 @@ struct Index {
         .interpolation(ImageInterpolation.High)
         .blur(this.pageIndex === 0 ? 0 : 40)
         .opacity(this.bgFade)
+        .scale({ x: 1.06, y: 1.06 })
+        .translate({ x: this.tiltX * -10, y: this.tiltY * -10 })
 
       Column()
         .width('100%')
@@ -648,6 +711,8 @@ struct Index {
       .alignItems(HorizontalAlign.Start)
       .padding({ left: 28, right: 28, bottom: 108 })
       .constraintSize({ maxWidth: 560 })
+      .translate({ x: this.tiltX * -22, y: this.tiltY * -22 })
+      .rotate({ x: this.tiltY * 1.4, y: this.tiltX * -1.4, z: 0, angle: this.tiltX * 0.6 })
 
       // 信息入口
       Row({ space: 10 }) {
