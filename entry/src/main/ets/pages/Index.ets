@@ -235,28 +235,37 @@ struct Index {
 
   build() {
     Stack() {
-      // 背景图只在「今夜」页铺底，其他页保持纯黑，避免标题栏出现色带
-      if (this.pageIndex === 0) {
-        Image($r('app.media.bg_pillars'))
-          .width('100%')
-          .height('100%')
-          .objectFit(ImageFit.Cover)
-          .interpolation(ImageInterpolation.High)
+      // 星空图常驻垫底：今夜页清晰，七天/我的页模糊
+      Image($r('app.media.bg_pillars'))
+        .width('100%')
+        .height('100%')
+        .objectFit(ImageFit.Cover)
+        .interpolation(ImageInterpolation.High)
+        .saturate(0.82)
+        .blur(this.pageIndex === 0 ? 0 : 40)
 
-        Column()
-          .width('100%')
-          .height('100%')
-          .linearGradient({ angle: 90, colors: this.sideVeil })
+      // 极淡冷色叠加，抵消底图的暖金偏色
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#0A14285A')
 
+      Column()
+        .width('100%')
+        .height('100%')
+        .linearGradient({ angle: 90, colors: this.sideVeil })
+
+      Column()
+        .width('100%')
+        .height('100%')
+        .linearGradient({ angle: 180, colors: this.veilColors })
+
+      // 非首屏再加一层压暗，保证列表可读，同时保留模糊星空的氛围
+      if (this.pageIndex !== 0) {
         Column()
           .width('100%')
           .height('100%')
-          .linearGradient({ angle: 180, colors: this.veilColors })
-      } else {
-        Column()
-          .width('100%')
-          .height('100%')
-          .backgroundColor('#0B0A09')
+          .backgroundColor('#B3000000')
       }
 
       Navigation() {
@@ -322,7 +331,7 @@ struct Index {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#0B0A09')
+        .backgroundColor('#0A0A0A')
       }
     }
     .width('100%')
@@ -330,7 +339,7 @@ struct Index {
     .bindSheet($$this.showMenu, this.MenuSheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
-      backgroundColor: '#14120F',
+      backgroundColor: '#121212',
       showClose: true
     })
   }
@@ -413,7 +422,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#0B0A09')
+    .backgroundColor(Color.Transparent)
     .padding({ bottom: 80 })
   }
 
@@ -604,7 +613,7 @@ struct Index {
     .bindSheet($$this.showCity, this.CitySheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
-      backgroundColor: '#14120F'
+      backgroundColor: '#121212'
     })
   }
 
@@ -749,7 +758,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#0B0A09')
+    .backgroundColor(Color.Transparent)
   }
 
   @Builder
@@ -888,18 +897,18 @@ struct Index {
   }
 
   private veilColors: Array<[ResourceColor, number]> = [
-    ['#000B0A09', 0.0],
-    ['#100B0A09', 0.22],
-    ['#480B0A09', 0.44],
-    ['#B80B0A09', 0.66],
-    ['#F20B0A09', 0.86],
-    ['#FF0B0A09', 1.0]
+    ['#000A0A0A', 0.0],
+    ['#100A0A0A', 0.22],
+    ['#480A0A0A', 0.44],
+    ['#B80A0A0A', 0.66],
+    ['#F20A0A0A', 0.86],
+    ['#FF0A0A0A', 1.0]
   ];
 
   private sideVeil: Array<[ResourceColor, number]> = [
-    ['#880B0A09', 0.0],
-    ['#440B0A09', 0.24],
-    ['#0A0B0A09', 0.44],
-    ['#000B0A09', 0.58]
+    ['#880A0A0A', 0.0],
+    ['#440A0A0A', 0.24],
+    ['#0A0A0A0A', 0.44],
+    ['#000A0A0A', 0.58]
   ];
 }
