@@ -2,11 +2,12 @@
  * 暗夜站点表（内置演示数据）。
  * 真实实现应替换为 VIIRS 光污染栅格 + 视野搜索，见设计文档 §6.9。
  */
+@ObservedV2
 export class DarkSite {
-  name: string;
-  lat: number;
-  lon: number;
-  bortle: number;
+  @Trace name: string;
+  @Trace lat: number;
+  @Trace lon: number;
+  @Trace bortle: number;
 
   constructor(name: string, lat: number, lon: number, bortle: number) {
     this.name = name;
@@ -16,13 +17,14 @@ export class DarkSite {
   }
 }
 
+@ObservedV2
 export class DarkHint {
-  name: string = '';
-  bortle: number = 0;
-  km: number = 0;
-  bearing: string = '';
-  lat: number = 0;
-  lon: number = 0;
+  @Trace name: string = '';
+  @Trace bortle: number = 0;
+  @Trace km: number = 0;
+  @Trace bearing: string = '';
+  @Trace lat: number = 0;
+  @Trace lon: number = 0;
 }
 
 const SITES: DarkSite[] = [

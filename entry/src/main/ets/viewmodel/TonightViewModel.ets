@@ -1,17 +1,18 @@
 import { City, DayData, HourlyWeather, ScoreResult, TargetPoint, Window } from '../core/data/Models';
 import { scoreFor, windowFor, DEEP_TARGETS } from '../core/score/Score';
+import { nearestDarkSite, DarkHint } from '../core/data/DarkSites';
 
 /** 一天的概览（七天页用） */
+@ObservedV2
 export class DayScore {
-  label: string = '';
-  weekday: string = '';
-  total: number = 0;
-  grade: string = '';
-  windowText: string = '';
-  targetName: string = '';
+  @Trace label: string = '';
+  @Trace weekday: string = '';
+  @Trace total: number = 0;
+  @Trace grade: string = '';
+  @Trace windowText: string = '';
+  @Trace targetName: string = '';
 }
 
-/** 演示数据：成都 2026-11-07（与原型一致，接入真实数据后删除） */
 export const CITIES: City[] = [
   new City('成都市', 30.67, 104.06, 8),
   new City('冷湖镇', 38.75, 93.34, 1),
@@ -21,14 +22,37 @@ export const CITIES: City[] = [
   new City('兴隆站', 40.40, 117.57, 4)
 ];
 
+/**
+ * 状态管理 V2：状态直接住在 ViewModel 里，不再需要往组件搬。
+ * 页面用 @Computed 读它，任一 @Trace 字段变化都会驱动刷新。
+ */
+@ObservedV2
 export class TonightViewModel {
-  city: City = CITIES[0];
-  ymd: number[] = [2026, 11, 7];
-  cityIndex: number = 0;
+  @Trace cityIndex: number = 0;
+  @Trace city: City = CITIES[0];
+  @Trace result: ScoreResult = new ScoreResult();
+  @Trace weekRows: DayScore[] = [];
+  @Trace darkHint: DarkHint | null = null;
 
+  ymd: number[] = [2026, 11, 7];
+
+  /** 派生值：城市名 */
+  @Computed
+  get cityName(): string {
+    return this.city.name;
+  }
+
+  /** 换城市并重算（页面不再手工搬运） */
   setCity(i: number): void {
     this.cityIndex = i;
     this.city = CITIES[i];
+    this.refresh();
+  }
+
+  refresh(): void {
+    this.result = this.resolve();
+    this.weekRows = this.week();
+    this.darkHint = nearestDarkSite(this.city.lat, this.city.lon, this.city.bortle);
   }
 
   /** 七天概览 */
@@ -55,6 +79,24 @@ export class TonightViewModel {
       out.push(row);
     }
     return out;
+  }
+
+  /** 七天汇总文案（低分夜带上最近的暗夜） */
+  @Computed
+  get weekSummary(): string {
+    if (this.weekRows.length === 0) return '';
+    let best: DayScore = this.weekRows[0];
+    for (const r of this.weekRows) {
+      if (r.total > best.total) best = r;
+    }
+    if (best.total >= 30) {
+      return '本周最佳 ' + best.label + ' · ' + best.total.toString() + ' 分';
+    }
+    if (this.darkHint !== null) {
+      return '整周偏弱 · 最近的暗夜 ' + this.darkHint.bearing + ' ' + this.darkHint.km.toString()
+        + ' km ' + this.darkHint.name + '（Bortle ' + this.darkHint.bortle.toString() + '）';
+    }
+    return '整周偏弱 · 建议换观测地';
   }
 
   private demoDayOffset(baseCloud: number): DayData {

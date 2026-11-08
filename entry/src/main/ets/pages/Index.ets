@@ -14,31 +14,50 @@ import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
  * 背景为真实星空图 + 自下而上的暗色遮罩，保证文字可读。
  */
 @Entry
-@Component
+@ComponentV2
 struct Index {
-  @State result: ScoreResult = new ScoreResult();
-  @State showSheet: boolean = false;
-  @State weekRows: DayScore[] = [];
-  @State showCity: boolean = false;
-  @State cityName2: string = '成都市';
-  @State darkHint: DarkHint | null = null;
-  @State showFeedback: boolean = false;
-  @State showMap: boolean = false;
-  @State mapError: string = '';
-  @State markerLat: number = 0;
-  @State markerLon: number = 0;
-  private mapCtl: map.MapComponentController | null = null;
-  @State locating: boolean = false;
-  @State locHint: string = '';
-  @State locAccuracy: number = -1;   // -1 = 无精确定位
-  @State locSource: string = '';     // '精确定位' | '城市级' | ''
-  @State mapOptions: mapCommon.MapOptions = {
+  // —— UI 局部状态（V2：@Local）——
+  @Local showSheet: boolean = false;
+  @Local showCity: boolean = false;
+  @Local showFeedback: boolean = false;
+  @Local showMap: boolean = false;
+  @Local showMenu: boolean = false;
+  @Local mapError: string = '';
+  @Local markerLat: number = 0;
+  @Local markerLon: number = 0;
+  @Local locating: boolean = false;
+  @Local locHint: string = '';
+  @Local locAccuracy: number = -1;   // -1 = 无精确定位
+  @Local locSource: string = '';     // '精确定位' | '城市级' | ''
+  @Local pageIndex: number = 0;
+  @Local mapOptions: mapCommon.MapOptions = {
     position: { target: { latitude: 30.67, longitude: 104.06 }, zoom: 10 },
     dayNightMode: mapCommon.DayNightMode.NIGHT
   };
-  @State pageIndex: number = 0;
-  @State showMenu: boolean = false;
+
+  // —— 业务状态住在 ViewModel 里，这里只读 ——
   private vm: TonightViewModel = new TonightViewModel();
+  private mapCtl: map.MapComponentController | null = null;
+
+  @Computed
+  get result(): ScoreResult {
+    return this.vm.result;
+  }
+
+  @Computed
+  get weekRows(): DayScore[] {
+    return this.vm.weekRows;
+  }
+
+  @Computed
+  get darkHint(): DarkHint | null {
+    return this.vm.darkHint;
+  }
+
+  @Computed
+  get cityName2(): string {
+    return this.vm.cityName;
+  }
   private cityName: string = '成都市';
   private dateText: string = '11月7日 周五';
   private clock: string = '';
@@ -149,11 +168,8 @@ struct Index {
   }
 
   private applyCity(i: number): void {
+    // V2：ViewModel 自己 hold 状态，页面不再赋值
     this.vm.setCity(i);
-    this.cityName2 = CITIES[i].name;
-    this.result = this.vm.resolve();
-    this.weekRows = this.vm.week();
-    this.darkHint = nearestDarkSite(this.vm.city.lat, this.vm.city.lon, this.vm.city.bortle);
   }
 
   private openMap(): void {
@@ -188,21 +204,6 @@ struct Index {
     this.showMap = true;
   }
 
-  private weekSummary(): string {
-    if (this.weekRows.length === 0) return '';
-    let best: DayScore = this.weekRows[0];
-    for (const r of this.weekRows) {
-      if (r.total > best.total) best = r;
-    }
-    if (best.total < 30) {
-      if (this.darkHint !== null) {
-        return '整周偏弱 · 最近的暗夜 ' + this.darkHint!.bearing + ' ' + this.darkHint!.km.toString()
-          + ' km ' + this.darkHint!.name + '（Bortle ' + this.darkHint!.bortle.toString() + '）';
-      }
-      return '整周偏弱 · 建议换观测地';
-    }
-    return '本周最佳 ' + best.label + ' · ' + best.total.toString() + ' 分';
-  }
 
   aboutToAppearClock(): void {
     const d: Date = new Date();
@@ -212,9 +213,7 @@ struct Index {
   }
 
   aboutToAppear(): void {
-    this.result = this.vm.resolve();
-    this.weekRows = this.vm.week();
-    this.darkHint = nearestDarkSite(this.vm.city.lat, this.vm.city.lon, this.vm.city.bortle);
+    this.vm.refresh();
     this.checkFeedback();
     this.aboutToAppearClock();
   }
@@ -641,11 +640,6 @@ struct Index {
         .padding({ top: 12, bottom: 12 })
         .onClick(() => {
           this.vm.setCity(i);
-          this.cityName2 = c.name;
-          this.result = this.vm.resolve();
-          this.weekRows = this.vm.week();
-          this.darkHint = nearestDarkSite(this.vm.city.lat, this.vm.city.lon, this.vm.city.bortle);
-    this.checkFeedback();
           this.showCity = false;
         })
       }, (c: City) => c.name)
@@ -661,7 +655,7 @@ struct Index {
         Text('七天')
           .fontSize(13)
           .fontColor('#B9B2A6')
-        Text(this.weekSummary())
+        Text(this.vm.weekSummary)
           .fontSize(12)
           .fontColor('#8C8378')
           .margin({ top: 4 })
