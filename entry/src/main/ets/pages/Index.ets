@@ -239,20 +239,20 @@ struct Index {
         TabContent() {
           this.PosterPage()
         }.tabBar(new BottomTabBarStyle($r('app.media.ic_moon'), '今夜')
-          .labelStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' })
-          .iconStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' }))
+          .labelStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' })
+          .iconStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' }))
 
         TabContent() {
           this.WeekPage()
         }.tabBar(new BottomTabBarStyle($r('app.media.ic_week'), '七天')
-          .labelStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' })
-          .iconStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' }))
+          .labelStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' })
+          .iconStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' }))
 
         TabContent() {
           this.MinePage()
         }.tabBar(new BottomTabBarStyle($r('app.media.ic_me'), '我的')
-          .labelStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' })
-          .iconStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' }))
+          .labelStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' })
+          .iconStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' }))
       }
       .barMode(BarMode.Fixed)
       .barHeight(56)
@@ -272,11 +272,11 @@ struct Index {
           Row() {
             Text(this.darkHint === null ? this.cityName2 : this.darkHint!.name)
               .fontSize(15)
-              .fontColor('#F2ECE2')
+              .fontColor('#FFFFFF')
             Blank()
             Text('关闭')
               .fontSize(14)
-              .fontColor('#D9A05B')
+              .fontColor('#FFFFFF')
               .onClick(() => { this.showMap = false; })
           }
           .width('100%')
@@ -352,7 +352,7 @@ struct Index {
     Column() {
       Text(label)
         .fontSize(13)
-        .fontColor(this.pageIndex === idx ? '#F2ECE2' : '#7A7268')
+        .fontColor(this.pageIndex === idx ? '#FFFFFF' : '#8C8C8C')
         .fontWeight(this.pageIndex === idx ? FontWeight.Medium : FontWeight.Regular)
     }
     .layoutWeight(1)
@@ -366,7 +366,7 @@ struct Index {
     Column() {
       Text('我的')
         .fontSize(13)
-        .fontColor('#B9B2A6')
+        .fontColor('#CCCCCC')
         .width('100%')
         .padding({ left: 28, right: 28, top: 52, bottom: 16 })
 
@@ -388,14 +388,14 @@ struct Index {
     Row() {
       Text(title)
         .fontSize(15)
-        .fontColor('#F2ECE2')
+        .fontColor('#FFFFFF')
       Blank()
       Text(value)
         .fontSize(12)
-        .fontColor('#8C8378')
+        .fontColor('#999999')
       Text('›')
         .fontSize(13)
-        .fontColor('#6B645B')
+        .fontColor('#808080')
         .margin({ left: 8 })
     }
     .width('100%')
@@ -436,7 +436,7 @@ struct Index {
         Row() {
           Text('☰')
             .fontSize(16)
-            .fontColor('#F2ECE2')
+            .fontColor('#FFFFFF')
             .width(40)
             .height(40)
             .textAlign(TextAlign.Center)
@@ -450,7 +450,7 @@ struct Index {
 
           Text('◎')
             .fontSize(16)
-            .fontColor('#F2ECE2')
+            .fontColor('#FFFFFF')
             .width(40)
             .height(40)
             .textAlign(TextAlign.Center)
@@ -466,11 +466,11 @@ struct Index {
         Column() {
           Text(this.cityName2)
             .fontSize(22)
-            .fontColor('#F2ECE2')
+            .fontColor('#FFFFFF')
             .fontWeight(FontWeight.Medium)
           Text(this.dateText + ' · ' + this.clock)
             .fontSize(11)
-            .fontColor('#B9B2A6')
+            .fontColor('#CCCCCC')
             .margin({ top: 3 })
         }
         .margin({ top: 6 })
@@ -486,27 +486,27 @@ struct Index {
       Column() {
         Text(this.result.grade)
           .fontSize(30)
-          .fontColor('#F2ECE2')
+          .fontColor('#FFFFFF')
           .fontWeight(FontWeight.Regular)
           .textShadow({ radius: 14, color: '#000000', offsetY: 2 })
 
         Text('观星指数')
           .fontSize(13)
-          .fontColor('#D6CFC2')
+          .fontColor('#E6E6E6')
           .letterSpacing(1)
           .margin({ top: 4 })
 
         Row() {
           Text(this.result.total.toString())
             .fontSize(150)
-            .fontColor('#F2ECE2')
+            .fontColor('#FFFFFF')
             .fontWeight(FontWeight.Lighter)
             .letterSpacing(-6)
             .textShadow({ radius: 30, color: '#000000' })
 
           Text('/100')
             .fontSize(22)
-            .fontColor('#B9B2A6')
+            .fontColor('#CCCCCC')
             .margin({ left: 8, bottom: 28 })
         }
         .alignItems(VerticalAlign.Bottom)
@@ -514,34 +514,34 @@ struct Index {
 
         Text(this.result.window === null ? '今晚没有观测窗口' : this.result.window.text)
           .fontSize(15)
-          .fontColor('#E9E3D9')
+          .fontColor('#FFFFFF')
           .margin({ top: 18 })
 
         Text(this.result.targetName + ' · ' + this.result.limit)
           .fontSize(12)
-          .fontColor('#9A9186')
+          .fontColor('#B3B3B3')
           .margin({ top: 6 })
 
         if (this.showFeedback) {
           Row({ space: 14 }) {
             Text('昨晚 少云 · 记一下？')
               .fontSize(12)
-              .fontColor('#B9B2A6')
+              .fontColor('#CCCCCC')
             Text('全晴')
               .fontSize(12)
-              .fontColor('#D9A05B')
+              .fontColor('#FFFFFF')
               .onClick(() => { this.submitFeedback(0); })
             Text('少云')
               .fontSize(12)
-              .fontColor('#D9A05B')
+              .fontColor('#FFFFFF')
               .onClick(() => { this.submitFeedback(1); })
             Text('多云')
               .fontSize(12)
-              .fontColor('#D9A05B')
+              .fontColor('#FFFFFF')
               .onClick(() => { this.submitFeedback(2); })
             Text('阴')
               .fontSize(12)
-              .fontColor('#D9A05B')
+              .fontColor('#FFFFFF')
               .onClick(() => { this.submitFeedback(3); })
           }
           .margin({ top: 12 })
@@ -551,7 +551,7 @@ struct Index {
           Text('最近的暗夜　' + this.darkHint!.bearing + ' ' + this.darkHint!.km.toString()
             + ' km　' + this.darkHint!.name + '　Bortle ' + this.darkHint!.bortle.toString() + '　›')
             .fontSize(12)
-            .fontColor('#D9A05B')
+            .fontColor('#FFFFFF')
             .margin({ top: 10 })
             .onClick(() => { this.openMap(); })
         }
@@ -571,7 +571,7 @@ struct Index {
           .borderColor('#33FFFFFF')
           .textAlign(TextAlign.Center)
           .fontSize(12)
-          .fontColor('#E8E2D6')
+          .fontColor('#FFFFFF')
           .onClick(() => { this.openMap(); })
 
         Text('i')
@@ -583,7 +583,7 @@ struct Index {
           .borderColor('#33FFFFFF')
           .textAlign(TextAlign.Center)
           .fontSize(13)
-          .fontColor('#E8E2D6')
+          .fontColor('#FFFFFF')
           .onClick(() => { this.showSheet = true; })
       }
       .position({ right: 24, bottom: 86 })
@@ -612,7 +612,7 @@ struct Index {
     Column() {
       Text('菜单')
         .fontSize(13)
-        .fontColor('#8C8378')
+        .fontColor('#999999')
         .width('100%')
         .padding({ bottom: 8 })
 
@@ -643,35 +643,35 @@ struct Index {
       Row() {
         Text(this.locating ? '定位中…' : '◎ 用我的位置')
           .fontSize(15)
-          .fontColor('#D9A05B')
+          .fontColor('#FFFFFF')
         Blank()
         if (this.locHint.length > 0) {
           Text(this.locHint)
             .fontSize(11)
-            .fontColor('#8C8378')
+            .fontColor('#999999')
         }
       }
       .width('100%')
       .padding({ top: 4, bottom: 14 })
       .onClick(() => { this.useMyLocation(); })
 
-      Divider().color('#2A2620').margin({ bottom: 8 })
+      Divider().color('#33FFFFFF').margin({ bottom: 8 })
 
       ForEach(CITIES, (c: City, i: number) => {
         Row() {
           Column() {
             Text(c.name)
               .fontSize(16)
-              .fontColor(this.vm.cityIndex === i ? '#D9A05B' : '#F2ECE2')
+              .fontColor(this.vm.cityIndex === i ? '#FFFFFF' : '#FFFFFF')
             Text('Bortle ' + c.bortle.toString())
               .fontSize(11)
-              .fontColor('#8C8378')
+              .fontColor('#999999')
               .margin({ top: 3 })
           }
           .alignItems(HorizontalAlign.Start)
           Blank()
           if (this.vm.cityIndex === i) {
-            Text('●').fontSize(12).fontColor('#D9A05B')
+            Text('●').fontSize(12).fontColor('#FFFFFF')
           }
         }
         .width('100%')
@@ -692,10 +692,10 @@ struct Index {
       Column() {
         Text('七天')
           .fontSize(13)
-          .fontColor('#B9B2A6')
+          .fontColor('#CCCCCC')
         Text(this.vm.weekSummary)
           .fontSize(12)
-          .fontColor('#8C8378')
+          .fontColor('#999999')
           .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Start)
@@ -709,10 +709,10 @@ struct Index {
               Column() {
                 Text(row.label)
                   .fontSize(15)
-                  .fontColor('#F2ECE2')
+                  .fontColor('#FFFFFF')
                 Text(row.weekday)
                   .fontSize(11)
-                  .fontColor('#9A9186')
+                  .fontColor('#B3B3B3')
                   .margin({ top: 3 })
               }
               .alignItems(HorizontalAlign.Start)
@@ -720,19 +720,19 @@ struct Index {
 
               Text(row.windowText)
                 .fontSize(12)
-                .fontColor('#CFC7BA')
+                .fontColor('#E6E6E6')
                 .layoutWeight(1)
 
               Text(row.total.toString())
                 .fontSize(26)
-                .fontColor(row.total >= 50 ? '#D9A05B' : '#F2ECE2')
+                .fontColor(row.total >= 50 ? '#FFFFFF' : '#FFFFFF')
                 .fontWeight(FontWeight.Lighter)
                 .width(56)
                 .textAlign(TextAlign.End)
 
               Text(row.grade)
                 .fontSize(11)
-                .fontColor('#9A9186')
+                .fontColor('#B3B3B3')
                 .width(40)
                 .textAlign(TextAlign.End)
             }
@@ -741,7 +741,7 @@ struct Index {
           }
         }, (row: DayScore) => row.label)
       }
-      .divider({ strokeWidth: 1, color: '#1E1B17', startMargin: 28, endMargin: 28 })
+      .divider({ strokeWidth: 1, color: '#26FFFFFF', startMargin: 28, endMargin: 28 })
       .layoutWeight(1)
       .scrollBar(BarState.Off)
       .padding({ bottom: 72 })
@@ -758,50 +758,50 @@ struct Index {
       Row() {
         Text('今夜')
           .fontSize(12)
-          .fontColor('#8C8378')
+          .fontColor('#999999')
         Blank()
         Text(this.result.window === null ? '无窗口' : this.result.window.text)
           .fontSize(13)
-          .fontColor('#E9E3D9')
+          .fontColor('#FFFFFF')
       }
       .width('100%')
       .padding({ bottom: 14 })
 
-      Divider().color('#2A2620')
+      Divider().color('#33FFFFFF')
 
       // 综合分
       Row() {
         Column() {
           Text('综合分')
             .fontSize(16)
-            .fontColor('#F2ECE2')
+            .fontColor('#FFFFFF')
           Text('天气分 × 天空分 ÷ 100')
             .fontSize(11)
-            .fontColor('#8C8378')
+            .fontColor('#999999')
             .margin({ top: 4 })
         }
         .alignItems(HorizontalAlign.Start)
         Blank()
         Text(this.result.weather.toString() + ' × ' + this.result.sky.toString() + ' = ' + this.result.total.toString())
           .fontSize(15)
-          .fontColor('#D9A05B')
+          .fontColor('#FFFFFF')
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .padding({ top: 14, bottom: 14 })
 
-      Divider().color('#2A2620')
+      Divider().color('#33FFFFFF')
 
       // 天气分
       Row() {
         Column() {
           Text('天气分 ' + this.result.weather.toString())
             .fontSize(16)
-            .fontColor('#F2ECE2')
+            .fontColor('#FFFFFF')
           Text('云 ' + this.result.cloud.toString() + ' · 通透 ' + this.result.transp.toString()
             + ' · 视宁 ' + this.result.seeing.toString() + ' · 露点 ' + this.result.dew.toString())
             .fontSize(11)
-            .fontColor('#8C8378')
+            .fontColor('#999999')
             .margin({ top: 4 })
         }
         .alignItems(HorizontalAlign.Start)
@@ -809,17 +809,17 @@ struct Index {
       .width('100%')
       .padding({ top: 14, bottom: 14 })
 
-      Divider().color('#2A2620')
+      Divider().color('#33FFFFFF')
 
       // 天空分
       Row() {
         Column() {
           Text('天空分 ' + this.result.sky.toString())
             .fontSize(16)
-            .fontColor('#F2ECE2')
+            .fontColor('#FFFFFF')
           Text('Bortle ' + this.result.bortle.toString() + ' · 月光影响已计入')
             .fontSize(11)
-            .fontColor('#8C8378')
+            .fontColor('#999999')
             .margin({ top: 4 })
         }
         .alignItems(HorizontalAlign.Start)
@@ -830,23 +830,23 @@ struct Index {
               : '城市级')
           : this.cityName2)
           .fontSize(12)
-          .fontColor('#8C8378')
+          .fontColor('#999999')
       }
       .width('100%')
       .padding({ top: 14, bottom: 14 })
 
-      Divider().color('#2A2620')
+      Divider().color('#33FFFFFF')
 
       // 月相
       Row() {
         Column() {
           Text('月亮')
             .fontSize(16)
-            .fontColor('#F2ECE2')
+            .fontColor('#FFFFFF')
           Text('月龄 ' + this.result.moonAge.toFixed(1) + ' 天 · 照亮 '
             + Math.round(this.result.moonIllum * 100).toString() + '%')
             .fontSize(11)
-            .fontColor('#8C8378')
+            .fontColor('#999999')
             .margin({ top: 4 })
         }
         .alignItems(HorizontalAlign.Start)
@@ -855,29 +855,29 @@ struct Index {
           ? '高度 ' + Math.round(this.result.moonAltDeg).toString() + '°'
           : '已落下')
           .fontSize(12)
-          .fontColor('#8C8378')
+          .fontColor('#999999')
       }
       .width('100%')
       .padding({ top: 14, bottom: 14 })
 
-      Divider().color('#2A2620')
+      Divider().color('#33FFFFFF')
 
       // 目标
       Row() {
         Column() {
           Text(this.result.targetName)
             .fontSize(16)
-            .fontColor('#F2ECE2')
+            .fontColor('#FFFFFF')
           Text('目标高度角 ' + Math.round(this.result.alt).toString() + '°')
             .fontSize(11)
-            .fontColor('#8C8378')
+            .fontColor('#999999')
             .margin({ top: 4 })
         }
         .alignItems(HorizontalAlign.Start)
         Blank()
         Text(this.result.limit)
           .fontSize(12)
-          .fontColor('#D9A05B')
+          .fontColor('#FFFFFF')
       }
       .width('100%')
       .padding({ top: 14 })
