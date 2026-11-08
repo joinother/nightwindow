@@ -8,7 +8,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { wgs84ToGcj02, LatLon, distanceKm } from '../core/geo/Coord';
 import { geoLocationManager } from '@kit.LocationKit';
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
-import { uiMaterial, window } from '@kit.ArkUI';
+import { uiMaterial, window, curves } from '@kit.ArkUI';
 
 /**
  * 首屏：海报式，只有一个数字。
@@ -35,6 +35,8 @@ struct Index {
   @Local insetLeft: number = 0;
   @Local insetRight: number = 0;
   @Local bgIndex: number = 0;
+  @Local pgAlpha: number = 1;
+  @Local pgShiftX: number = 0;
   @Local bgPrev: number = 0;
   @Local bgFade: number = 1;
   private bgList: Resource[] = [
@@ -359,7 +361,14 @@ struct Index {
       .animationDuration(200)
       .width('100%')
       .height('100%')
-      .onChange((i: number) => { this.pageIndex = i; })
+      .onChange((i: number) => {
+        if (i === this.pageIndex) return;
+        this.pageIndex = i;
+        this.pgAlpha = 0;
+        this.pgShiftX = 20;
+        animateTo({ duration: 220, curve: Curve.EaseOut }, () => { this.pgAlpha = 1; });
+        animateTo({ duration: 300, curve: curves.springMotion(0.5, 0.85) }, () => { this.pgShiftX = 0; });
+      })
       }
       .hideBackButton(true)
       .hideToolBar(true)
@@ -483,6 +492,8 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
+    .opacity(this.pageIndex === 2 ? this.pgAlpha : 1)
+    .translate({ x: this.pageIndex === 2 ? this.pgShiftX : 0 })
     .padding({ bottom: 80 })
   }
 
@@ -669,6 +680,8 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
+    .opacity(this.pageIndex === 0 ? this.pgAlpha : 1)
+    .translate({ x: this.pageIndex === 0 ? this.pgShiftX : 0 })
     .gesture(
       PanGesture({ direction: PanDirection.Vertical, distance: 30 })
         .onActionEnd((e: GestureEvent) => {
@@ -843,6 +856,8 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
+    .opacity(this.pageIndex === 1 ? this.pgAlpha : 1)
+    .translate({ x: this.pageIndex === 1 ? this.pgShiftX : 0 })
   }
 
   @Builder
