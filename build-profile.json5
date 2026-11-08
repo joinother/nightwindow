@@ -2,7 +2,7 @@
   "app": {
     /* 签名：用 DevEco 的 Automatically generate signature 生成调试签名即可，
        它会写入本地 signingConfigs 并保存到 ~/.ohos/config，不入库。
-       发布签名材料见 Documents/nightwindow-signing/。 */
+       发布签名材料请自行准备，不要提交到仓库。 */
     "products": [
       {
         "name": "default",
