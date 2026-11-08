@@ -27,6 +27,7 @@
 | 天文内核（月相/高度角/大气质量/角距/太阳高度） | ✅ 完成，纯函数、零系统依赖 |
 | 评分模型 | ✅ 完成 |
 | 首屏 / 七天 / 数据 / 我的 | ✅ 完成（状态管理 V2） |
+| 底部 Dock | ✅ 官方 Tabs 玻璃浮岛（沉浸光感）+ 毛玻璃按钮 |
 | 城市切换 / 地图（花瓣地图，夜间样式 + GCJ-02 纠偏） | ✅ 完成 |
 | 两档定位（城市级秒出 + 精确静默更新） | ✅ 完成 |
 | **真实天气数据** | ⚠️ **未接入**，用的是写死的演示数据 |
@@ -79,6 +80,10 @@ entry/src/main/ets/
 ```
 
 `core/astro` 不 import 任何 `@ohos.*`，可以脱离 HarmonyOS 单独测试或移植。
+
+底部 Dock 用官方 `Tabs` + `BottomTabBarStyle` + `barFloatingStyle` 的沉浸光感玻璃浮岛；
+☰ / ◎ / 地图 / i 等自绘按钮不在系统材质的生效范围（仅 Navigation 标题栏与底部 TabBar 生效），
+改用 `backgroundBlurStyle` 做同观感毛玻璃。
 
 全部状态使用 **V2**：`@ObservedV2` + `@Trace` 建模、`@ComponentV2` + `@Local` 做 UI 状态、
 `@Computed` 派生。业务状态住在 `TonightViewModel` 里，页面只读不搬。

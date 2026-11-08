@@ -8,6 +8,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { wgs84ToGcj02, LatLon, distanceKm } from '../core/geo/Coord';
 import { geoLocationManager } from '@kit.LocationKit';
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
+import { uiMaterial } from '@kit.ArkUI';
 
 /**
  * 首屏：海报式，只有一个数字。
@@ -38,6 +39,18 @@ struct Index {
   // —— 业务状态住在 ViewModel 里，这里只读 ——
   private vm: TonightViewModel = new TonightViewModel();
   private mapCtl: map.MapComponentController | null = null;
+
+  // 系统沉浸式材质：仅 Navigation 标题栏 / 底部 TabBar 生效
+  private glassThin: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial({
+    style: uiMaterial.ImmersiveStyle.THIN,
+    interactive: true,
+    lightEffect: {}
+  });
+  private glassUltraThin: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial({
+    style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
+    interactive: true,
+    lightEffect: {}
+  });
 
   @Computed
   get result(): ScoreResult {
@@ -213,6 +226,8 @@ struct Index {
   }
 
   aboutToAppear(): void {
+    console.info('NightWindow material supported=' + uiMaterial.isImmersiveMaterialSupported()
+      + ' level=' + uiMaterial.getGlobalMaterialLevel());
     this.vm.refresh();
     this.checkFeedback();
     this.aboutToAppearClock();
@@ -220,30 +235,37 @@ struct Index {
 
   build() {
     Stack() {
-      Column() {
-        Stack() {
-          if (this.pageIndex === 0) {
-            this.PosterPage()
-          } else if (this.pageIndex === 1) {
-            this.WeekPage()
-          } else {
-            this.MinePage()
-          }
-        }
-        .width('100%')
-        .layoutWeight(1)
+      Tabs({ barPosition: BarPosition.End, index: this.pageIndex }) {
+        TabContent() {
+          this.PosterPage()
+        }.tabBar(new BottomTabBarStyle($r('app.media.ic_moon'), '今夜')
+          .labelStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' })
+          .iconStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' }))
 
-        Row() {
-          this.DockItem(0, '今夜')
-          this.DockItem(1, '七天')
-          this.DockItem(2, '我的')
-        }
-        .width('100%')
-        .height(56)
-        .backgroundColor('#0B0A09')
+        TabContent() {
+          this.WeekPage()
+        }.tabBar(new BottomTabBarStyle($r('app.media.ic_week'), '七天')
+          .labelStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' })
+          .iconStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' }))
+
+        TabContent() {
+          this.MinePage()
+        }.tabBar(new BottomTabBarStyle($r('app.media.ic_me'), '我的')
+          .labelStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' })
+          .iconStyle({ selectedColor: '#F2ECE2', unselectedColor: '#7A7268' }))
       }
+      .barMode(BarMode.Fixed)
+      .barHeight(56)
+      .barBackgroundColor(Color.Transparent)
+      .barOverlap(true)
+      .barFloatingStyle({
+        systemMaterial: this.glassThin,
+        maskColor: Color.Transparent
+      })
+      .animationDuration(200)
       .width('100%')
       .height('100%')
+      .onChange((i: number) => { this.pageIndex = i; })
 
       if (this.showMap) {
         Column() {
@@ -414,14 +436,28 @@ struct Index {
         Row() {
           Text('☰')
             .fontSize(16)
-            .fontColor('#E8E2D6')
+            .fontColor('#F2ECE2')
+            .width(40)
+            .height(40)
+            .textAlign(TextAlign.Center)
+            .borderRadius(20)
+            .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+            .borderWidth(0.5)
+            .borderColor('#33FFFFFF')
             .onClick(() => { this.showMenu = true; })
 
           Blank()
 
           Text('◎')
             .fontSize(16)
-            .fontColor('#E8E2D6')
+            .fontColor('#F2ECE2')
+            .width(40)
+            .height(40)
+            .textAlign(TextAlign.Center)
+            .borderRadius(20)
+            .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+            .borderWidth(0.5)
+            .borderColor('#33FFFFFF')
             .onClick(() => { this.useMyLocation(); })
         }
         .width('100%')
@@ -527,22 +563,24 @@ struct Index {
       // 信息入口
       Row({ space: 10 }) {
         Text('地图')
-          .width(44)
-          .height(30)
-          .borderRadius(15)
-          .borderWidth(1)
-          .borderColor('#66FFFFFF')
+          .width(46)
+          .height(32)
+          .borderRadius(16)
+          .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+          .borderWidth(0.5)
+          .borderColor('#33FFFFFF')
           .textAlign(TextAlign.Center)
           .fontSize(12)
           .fontColor('#E8E2D6')
           .onClick(() => { this.openMap(); })
 
         Text('i')
-          .width(30)
-          .height(30)
-          .borderRadius(15)
-          .borderWidth(1)
-          .borderColor('#66FFFFFF')
+          .width(32)
+          .height(32)
+          .borderRadius(16)
+          .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+          .borderWidth(0.5)
+          .borderColor('#33FFFFFF')
           .textAlign(TextAlign.Center)
           .fontSize(13)
           .fontColor('#E8E2D6')
