@@ -356,7 +356,7 @@ struct Index {
         systemMaterial: this.glassThin,
         maskColor: Color.Transparent
       })
-      .animationDuration(300)
+      .animationDuration(200)
       .width('100%')
       .height('100%')
       .onChange((i: number) => { this.pageIndex = i; })
