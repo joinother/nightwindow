@@ -711,8 +711,6 @@ struct Index {
       .alignItems(HorizontalAlign.Start)
       .padding({ left: 28, right: 28, bottom: 108 })
       .constraintSize({ maxWidth: 560 })
-      .translate({ x: this.tiltX * -22, y: this.tiltY * -22 })
-      .rotate({ x: this.tiltY * 1.4, y: this.tiltX * -1.4, z: 0, angle: this.tiltX * 0.6 })
 
       // 信息入口
       Row({ space: 10 }) {
