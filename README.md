@@ -81,9 +81,9 @@ entry/src/main/ets/
 
 `core/astro` 不 import 任何 `@ohos.*`，可以脱离 HarmonyOS 单独测试或移植。
 
-底部 Dock 用官方 `Tabs` + `BottomTabBarStyle` + `barFloatingStyle` 的沉浸光感玻璃浮岛；
-☰ / ◎ / 地图 / i 等自绘按钮不在系统材质的生效范围（仅 Navigation 标题栏与底部 TabBar 生效），
-改用 `backgroundBlurStyle` 做同观感毛玻璃。
+页面用 `Navigation` 包住 `Tabs`：`☰` / `◎` 放在 `Navigation.title()` 标题栏里，
+底部 Dock 用 `Tabs` + `BottomTabBarStyle` + `barFloatingStyle`——两处都吃官方的沉浸光感玻璃材质。
+`地图` / `i` 不在生效范围，用 `backgroundBlurStyle` 做同观感毛玻璃。
 
 全部状态使用 **V2**：`@ObservedV2` + `@Trace` 建模、`@ComponentV2` + `@Local` 做 UI 状态、
 `@Computed` 派生。业务状态住在 `TonightViewModel` 里，页面只读不搬。

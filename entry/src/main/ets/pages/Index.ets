@@ -235,7 +235,32 @@ struct Index {
 
   build() {
     Stack() {
-      Tabs({ barPosition: BarPosition.End, index: this.pageIndex }) {
+      // 背景图只在「今夜」页铺底，其他页保持纯黑，避免标题栏出现色带
+      if (this.pageIndex === 0) {
+        Image($r('app.media.bg_pillars'))
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Cover)
+          .interpolation(ImageInterpolation.High)
+
+        Column()
+          .width('100%')
+          .height('100%')
+          .linearGradient({ angle: 90, colors: this.sideVeil })
+
+        Column()
+          .width('100%')
+          .height('100%')
+          .linearGradient({ angle: 180, colors: this.veilColors })
+      } else {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('#0B0A09')
+      }
+
+      Navigation() {
+        Tabs({ barPosition: BarPosition.End, index: this.pageIndex }) {
         TabContent() {
           this.PosterPage()
         }.tabBar(new BottomTabBarStyle($r('app.media.ic_moon'), '今夜')
@@ -266,6 +291,15 @@ struct Index {
       .width('100%')
       .height('100%')
       .onChange((i: number) => { this.pageIndex = i; })
+      }
+      .hideBackButton(true)
+      .hideToolBar(true)
+      .title(this.TopBar())
+      .titleMode(NavigationTitleMode.Mini)
+      .mode(NavigationMode.Stack)
+      .backgroundColor(Color.Transparent)
+      .width('100%')
+      .height('100%')
 
       if (this.showMap) {
         Column() {
@@ -404,84 +438,52 @@ struct Index {
   }
 
   @Builder
+  TopBar() {
+    Row() {
+      Text('☰')
+        .fontSize(16)
+        .fontColor('#FFFFFF')
+        .width(40)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .borderRadius(20)
+        .systemMaterial(this.glassUltraThin)
+        .onClick(() => { this.showMenu = true; })
+
+      Blank()
+
+      Column() {
+        Text(this.cityName2)
+          .fontSize(20)
+          .fontColor('#FFFFFF')
+          .fontWeight(FontWeight.Medium)
+        Text(this.dateText + ' · ' + this.clock)
+          .fontSize(11)
+          .fontColor('#CCCCCC')
+          .margin({ top: 2 })
+      }
+      .onClick(() => { this.showCity = true; })
+
+      Blank()
+
+      Text('◎')
+        .fontSize(16)
+        .fontColor('#FFFFFF')
+        .width(40)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .borderRadius(20)
+        .systemMaterial(this.glassUltraThin)
+        .onClick(() => { this.useMyLocation(); })
+    }
+    .width('100%')
+    .height(64)
+    .padding({ left: 20, right: 20 })
+  }
+
+  @Builder
   PosterPage() {
     Stack({ alignContent: Alignment.BottomStart }) {
-      // 背景图
-      Image($r('app.media.bg_pillars'))
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Cover)
-        .interpolation(ImageInterpolation.High)
-
-      // 遮罩一：左侧压暗（横屏时保证左下可读）
-      Column()
-        .width('100%')
-        .height('100%')
-        .linearGradient({
-          angle: 90,
-          colors: this.sideVeil
-        })
-
-      // 遮罩二：自下而上压暗
-      Column()
-        .width('100%')
-        .height('100%')
-        .linearGradient({
-          angle: 180,
-          colors: this.veilColors
-        })
-
-      // 顶部：时间 + 地点
-      Column() {
-        Row() {
-          Text('☰')
-            .fontSize(16)
-            .fontColor('#FFFFFF')
-            .width(40)
-            .height(40)
-            .textAlign(TextAlign.Center)
-            .borderRadius(20)
-            .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-            .borderWidth(0.5)
-            .borderColor('#33FFFFFF')
-            .onClick(() => { this.showMenu = true; })
-
-          Blank()
-
-          Text('◎')
-            .fontSize(16)
-            .fontColor('#FFFFFF')
-            .width(40)
-            .height(40)
-            .textAlign(TextAlign.Center)
-            .borderRadius(20)
-            .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-            .borderWidth(0.5)
-            .borderColor('#33FFFFFF')
-            .onClick(() => { this.useMyLocation(); })
-        }
-        .width('100%')
-        .padding({ left: 28, right: 28 })
-
-        Column() {
-          Text(this.cityName2)
-            .fontSize(22)
-            .fontColor('#FFFFFF')
-            .fontWeight(FontWeight.Medium)
-          Text(this.dateText + ' · ' + this.clock)
-            .fontSize(11)
-            .fontColor('#CCCCCC')
-            .margin({ top: 3 })
-        }
-        .margin({ top: 6 })
-        .onClick(() => { this.showCity = true; })
-      }
-      .width('100%')
-      .height('100%')
-      .alignItems(HorizontalAlign.Center)
-      .position({ x: 0, y: 0 })
-      .padding({ top: 18 })
-
       // 内容
       Column() {
         Text(this.result.grade)
@@ -590,8 +592,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#0B0A09')
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .backgroundColor(Color.Transparent)
     .gesture(
       PanGesture({ direction: PanDirection.Vertical, distance: 30 })
         .onActionEnd((e: GestureEvent) => {
