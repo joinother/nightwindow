@@ -35,6 +35,8 @@ struct Index {
   @Local insetLeft: number = 0;
   @Local insetRight: number = 0;
   @Local bgIndex: number = 0;
+  @Local bgPrev: number = 0;
+  @Local bgFade: number = 1;
   @Local contentAlpha: number = 1;
   @Local contentShift: number = 0;
   private bgList: Resource[] = [
@@ -203,6 +205,17 @@ struct Index {
     this.vm.setCity(i);
   }
 
+  /** 相册式交叉淡入：旧图垫底，新图从 0 淡到 1 */
+  private crossFadeBg(next: number): void {
+    if (next === this.bgIndex) return;
+    this.bgPrev = this.bgIndex;
+    this.bgIndex = next;
+    this.bgFade = 0;
+    animateTo({ duration: 320, curve: Curve.EaseInOut }, () => {
+      this.bgFade = 1;
+    });
+  }
+
   private openMap(): void {
     this.showSheet = false;
     if (this.darkHint === null) {
@@ -276,13 +289,21 @@ struct Index {
 
   build() {
     Stack() {
-      // 星空图常驻垫底：今夜页清晰，七天/我的页模糊
+      // 星空图常驻垫底：两层交叉淡入，切换时像相册翻页
+      Image(this.bgList[this.bgPrev])
+        .width('100%')
+        .height('100%')
+        .objectFit(ImageFit.Cover)
+        .interpolation(ImageInterpolation.High)
+        .blur(this.pageIndex === 0 ? 0 : 40)
+
       Image(this.bgList[this.bgIndex])
         .width('100%')
         .height('100%')
         .objectFit(ImageFit.Cover)
         .interpolation(ImageInterpolation.High)
         .blur(this.pageIndex === 0 ? 0 : 40)
+        .opacity(this.bgFade)
 
       Column()
         .width('100%')
@@ -682,10 +703,10 @@ struct Index {
           this.lastSwipeMs = now;
           if (e.offsetX > 0) {
             this.vm.changeNight(1);
-            this.bgIndex = (this.bgIndex + 1) % this.bgList.length;
+            this.crossFadeBg((this.bgIndex + 1) % this.bgList.length);
           } else {
             this.vm.changeNight(-1);
-            this.bgIndex = (this.bgIndex - 1 + this.bgList.length) % this.bgList.length;
+            this.crossFadeBg((this.bgIndex - 1 + this.bgList.length) % this.bgList.length);
           }
         })
     )
