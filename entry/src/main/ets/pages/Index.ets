@@ -8,7 +8,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { wgs84ToGcj02, LatLon, distanceKm } from '../core/geo/Coord';
 import { geoLocationManager } from '@kit.LocationKit';
 import { abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
-import { uiMaterial } from '@kit.ArkUI';
+import { uiMaterial, window } from '@kit.ArkUI';
 
 /**
  * 首屏：海报式，只有一个数字。
@@ -31,6 +31,9 @@ struct Index {
   @Local locAccuracy: number = -1;   // -1 = 无精确定位
   @Local locSource: string = '';     // '精确定位' | '城市级' | ''
   @Local pageIndex: number = 0;
+  @Local insetTop: number = 0;
+  @Local insetLeft: number = 0;
+  @Local insetRight: number = 0;
   @Local mapOptions: mapCommon.MapOptions = {
     position: { target: { latitude: 30.67, longitude: 104.06 }, zoom: 10 },
     dayNightMode: mapCommon.DayNightMode.NIGHT
@@ -39,6 +42,8 @@ struct Index {
   // —— 业务状态住在 ViewModel 里，这里只读 ——
   private vm: TonightViewModel = new TonightViewModel();
   private mapCtl: map.MapComponentController | null = null;
+  private winRef: window.Window | null = null;
+  private insetsBound: boolean = false;
 
   // 系统沉浸式材质：仅 Navigation 标题栏 / 底部 TabBar 生效
   private glassThin: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial({
@@ -225,10 +230,33 @@ struct Index {
     this.clock = (h < 10 ? '0' : '') + h.toString() + ':' + (m < 10 ? '0' : '') + m.toString();
   }
 
+  /** 读取窗口避让区，避免 ☰ / ◎ 压到挖孔或状态栏 */
+  private async applySafeInsets(): Promise<void> {
+    try {
+      const win: window.Window = await window.getLastWindow(getContext(this));
+      this.winRef = win;
+      if (!this.insetsBound) {
+        this.insetsBound = true;
+        // 旋转/分屏后避让区会变，重新算一次
+        win.on('windowSizeChange', () => { this.applySafeInsets(); });
+      }
+      const sys: window.AvoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+      const cut: window.AvoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_CUTOUT);
+      this.insetTop = px2vp(Math.max(sys.topRect.height, cut.topRect.height));
+      this.insetLeft = px2vp(Math.max(sys.leftRect.width, cut.leftRect.width));
+      this.insetRight = px2vp(Math.max(sys.rightRect.width, cut.rightRect.width));
+      console.info('NightWindow insets top=' + this.insetTop + ' left=' + this.insetLeft
+        + ' right=' + this.insetRight);
+    } catch (e) {
+      console.warn('applySafeInsets failed');
+    }
+  }
+
   aboutToAppear(): void {
     console.info('NightWindow material supported=' + uiMaterial.isImmersiveMaterialSupported()
       + ' level=' + uiMaterial.getGlobalMaterialLevel());
     this.vm.refresh();
+    this.applySafeInsets();
     this.checkFeedback();
     this.aboutToAppearClock();
   }
@@ -486,8 +514,12 @@ struct Index {
         .onClick(() => { this.useMyLocation(); })
     }
     .width('100%')
-    .height(64)
-    .padding({ left: 20, right: 20 })
+    .height(64 + this.insetTop)
+    .padding({
+      left: 20 + this.insetLeft,
+      right: 20 + this.insetRight,
+      top: this.insetTop
+    })
   }
 
   @Builder
