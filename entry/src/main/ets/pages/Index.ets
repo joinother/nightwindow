@@ -282,14 +282,7 @@ struct Index {
         .height('100%')
         .objectFit(ImageFit.Cover)
         .interpolation(ImageInterpolation.High)
-        .saturate(0.82)
         .blur(this.pageIndex === 0 ? 0 : 40)
-
-      // 极淡冷色叠加，抵消底图的暖金偏色
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor('#0A14285A')
 
       Column()
         .width('100%')
@@ -525,10 +518,10 @@ struct Index {
         Text(this.cityName2)
           .fontSize(20)
           .fontColor('#FFFFFF')
-          .fontWeight(FontWeight.Medium)
+          .fontWeight(FontWeight.Medium)          .textShadow({ radius: 12, color: '#B3000000' })
         Text(this.vm.dateText + ' · ' + this.clock)
           .fontSize(11)
-          .fontColor('#CCCCCC')
+          .fontColor('#CCCCCC')          .textShadow({ radius: 10, color: '#B3000000' })
           .margin({ top: 2 })
       }
       .onClick(() => { this.showCity = true; })
@@ -567,7 +560,7 @@ struct Index {
 
         Text('观星指数')
           .fontSize(13)
-          .fontColor('#E6E6E6')
+          .fontColor('#E6E6E6')          .textShadow({ radius: 10, color: '#B3000000' })
           .letterSpacing(1)
           .margin({ top: 4 })
 
@@ -581,7 +574,7 @@ struct Index {
 
           Text('/100')
             .fontSize(22)
-            .fontColor('#CCCCCC')
+            .fontColor('#CCCCCC')            .textShadow({ radius: 10, color: '#B3000000' })
             .margin({ left: 8, bottom: 28 })
         }
         .alignItems(VerticalAlign.Bottom)
@@ -590,6 +583,7 @@ struct Index {
         Text(this.result.window === null ? '今晚没有观测窗口' : this.result.window.text)
           .fontSize(15)
           .fontColor('#FFFFFF')
+          .textShadow({ radius: 12, color: '#B3000000' })
           .margin({ top: 18 })
 
         Text(this.result.targetName + ' · ' + this.result.limit)
@@ -602,6 +596,7 @@ struct Index {
             Text('昨晚 少云 · 记一下？')
               .fontSize(12)
               .fontColor('#CCCCCC')
+              .textShadow({ radius: 10, color: '#B3000000' })
             Text('全晴')
               .fontSize(12)
               .fontColor('#FFFFFF')
@@ -627,6 +622,7 @@ struct Index {
             + ' km　' + this.darkHint!.name + '　Bortle ' + this.darkHint!.bortle.toString() + '　›')
             .fontSize(12)
             .fontColor('#FFFFFF')
+            .textShadow({ radius: 10, color: '#B3000000' })
             .margin({ top: 10 })
             .onClick(() => { this.openMap(); })
         }
@@ -982,24 +978,19 @@ struct Index {
   }
 
   private veilColors: Array<[ResourceColor, number]> = [
-    ['#000A0A0A', 0.0],
-    ['#100A0A0A', 0.22],
-    ['#480A0A0A', 0.44],
-    ['#B80A0A0A', 0.66],
-    ['#F20A0A0A', 0.86],
-    ['#FF0A0A0A', 1.0]
+    ['#00000000', 0.58],
+    ['#1F000000', 0.80],
+    ['#52000000', 1.0]
   ];
 
   private topVeil: Array<[ResourceColor, number]> = [
-    ['#A6000000', 0.0],
-    ['#59000000', 0.14],
-    ['#00000000', 0.30]
+    ['#40000000', 0.0],
+    ['#00000000', 0.16]
   ];
 
   private sideVeil: Array<[ResourceColor, number]> = [
-    ['#880A0A0A', 0.0],
-    ['#440A0A0A', 0.24],
-    ['#0A0A0A0A', 0.44],
-    ['#000A0A0A', 0.58]
+    ['#4D000000', 0.0],
+    ['#1A000000', 0.20],
+    ['#00000000', 0.38]
   ];
 }
