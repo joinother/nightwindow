@@ -35,6 +35,8 @@ struct Index {
   @Local insetLeft: number = 0;
   @Local insetRight: number = 0;
   @Local bgIndex: number = 0;
+  @Local contentAlpha: number = 1;
+  @Local contentShift: number = 0;
   private bgList: Resource[] = [
     $r('app.media.bg_pillars'),
     $r('app.media.bg_heic0515a'),
@@ -345,7 +347,17 @@ struct Index {
       .animationDuration(200)
       .width('100%')
       .height('100%')
-      .onChange((i: number) => { this.pageIndex = i; })
+      .onChange((i: number) => {
+        if (i === this.pageIndex) return;
+        this.pageIndex = i;
+        // 先落到"入场前"状态，再动画到常态，得到细微的淡入 + 上浮
+        this.contentAlpha = 0;
+        this.contentShift = 10;
+        animateTo({ duration: 260, curve: Curve.Friction }, () => {
+          this.contentAlpha = 1;
+          this.contentShift = 0;
+        });
+      })
       }
       .hideBackButton(true)
       .hideToolBar(true)
@@ -469,6 +481,8 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
+    .opacity(this.contentAlpha)
+    .translate({ y: this.contentShift })
     .padding({ bottom: 80 })
   }
 
@@ -652,6 +666,8 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
+    .opacity(this.contentAlpha)
+    .translate({ y: this.contentShift })
     .gesture(
       PanGesture({ direction: PanDirection.Vertical, distance: 30 })
         .onActionEnd((e: GestureEvent) => {
@@ -826,6 +842,8 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
+    .opacity(this.contentAlpha)
+    .translate({ y: this.contentShift })
   }
 
   @Builder
