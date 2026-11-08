@@ -33,6 +33,8 @@ export class TonightViewModel {
   @Trace result: ScoreResult = new ScoreResult();
   @Trace weekRows: DayScore[] = [];
   @Trace darkHint: DarkHint | null = null;
+  /** 昨晚评分（表盘红针做对照） */
+  @Trace refScore: number = 0;
 
   /** 相对基准夜（2026-11-07）的偏移，右滑 +1、左滑 -1 */
   @Trace dayOffset: number = 0;
@@ -78,6 +80,7 @@ export class TonightViewModel {
     this.result = this.resolve();
     this.weekRows = this.week();
     this.darkHint = nearestDarkSite(this.city.lat, this.city.lon, this.city.bortle);
+    this.refScore = this.scoreAt(this.dayOffset - 1);
   }
 
   /** 七天概览 */
@@ -140,6 +143,21 @@ export class TonightViewModel {
   }
 
   /** 当前选中的目标（深空取当夜最佳） */
+  /** 任意偏移那天的综合分（表盘红针用） */
+  scoreAt(offset: number): number {
+    const dt: Date = new Date(TonightViewModel.BASE[0], TonightViewModel.BASE[1] - 1,
+      TonightViewModel.BASE[2] + offset);
+    const ymd: number[] = [dt.getFullYear(), dt.getMonth() + 1, dt.getDate()];
+    const day: DayData = this.demoDay();
+    let best: number = 0;
+    for (const t of DEEP_TARGETS) {
+      const w: Window | null = windowFor(day, this.city, t, ymd);
+      const r: ScoreResult = scoreFor(day, this.city, t, w, ymd);
+      if (r.total > best) best = r.total;
+    }
+    return best;
+  }
+
   resolve(): ScoreResult {
     const day: DayData = this.demoDay();
     let best: ScoreResult | null = null;

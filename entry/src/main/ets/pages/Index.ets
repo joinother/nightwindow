@@ -2,6 +2,7 @@ import { TonightViewModel, DayScore, CITIES } from '../viewmodel/TonightViewMode
 import { ScoreResult, City } from '../core/data/Models';
 import { nearestDarkSite, DarkHint } from '../core/data/DarkSites';
 import { FeedbackStore } from '../common/FeedbackStore';
+import { ScoreGauge } from '../view/ScoreGauge';
 import { common } from '@kit.AbilityKit';
 import { display } from '@kit.ArkUI';
 import { sensor } from '@kit.SensorServiceKit';
@@ -655,8 +656,13 @@ struct Index {
 
           Text('/100')
             .fontSize(22)
-            .fontColor('#CCCCCC')            .textShadow({ radius: 10, color: '#B3000000' })
+            .fontColor('#CCCCCC')
+            .textShadow({ radius: 10, color: '#B3000000' })
             .margin({ left: 8, bottom: 28 })
+
+          // 压力表风格表盘：黑针今晚、红针昨晚
+          ScoreGauge({ score: this.vm.result.total, refScore: this.vm.refScore, gaugeSize: 100 })
+            .margin({ left: 20, bottom: 16 })
         }
         .alignItems(VerticalAlign.Bottom)
         .margin({ top: 2 })
