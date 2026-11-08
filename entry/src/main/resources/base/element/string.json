@@ -1,0 +1,9 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "今夜星主模块" },
+    { "name": "EntryAbility_desc", "value": "观星指数" },
+    { "name": "EntryAbility_label", "value": "今夜星" },
+    { "name": "loc_reason", "value": "用于查询你所在位置的天气并计算天体高度，可随时关闭并改为手动选择城市" },
+    { "name": "loc_reason_precise", "value": "用于判断你附近的光污染等级与到最近暗夜地点的实际距离，提高观星指数准确度" }
+  ]
+}

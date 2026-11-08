@@ -1,0 +1,13 @@
+{
+  "modelVersion": "26.0.0",
+  "name": "nightwindow",
+  "version": "1.0.0",
+  "description": "今夜星 · 观星指数",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.16"
+  }
+}

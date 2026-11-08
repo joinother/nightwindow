@@ -1,0 +1,40 @@
+{
+  "app": {
+    /* 签名：用 DevEco 的 Automatically generate signature 生成调试签名即可，
+       它会写入本地 signingConfigs 并保存到 ~/.ohos/config，不入库。
+       发布签名材料见 Documents/nightwindow-signing/。 */
+    "products": [
+      {
+        "name": "default",
+        /* 兼容 API 23（HarmonyOS 6.1.0）→ 目标 API 26 */
+        "compatibleSdkVersion": "6.1.0(23)",
+        "runtimeOS": "HarmonyOS",
+        "compileSdkVersion": "26.0.0",
+        "targetSdkVersion": "26.0.0"
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ],
+    "signingConfigs": []
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}
