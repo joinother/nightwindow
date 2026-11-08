@@ -58,7 +58,8 @@ struct Index {
   private mapCtl: map.MapComponentController | null = null;
   private winRef: window.Window | null = null;
   private insetsBound: boolean = false;
-  private lastSwipeMs: number = 0;
+  private touchStartX: number = 0;
+  private touchStartY: number = 0;
 
   // 系统沉浸式材质：仅 Navigation 标题栏 / 底部 TabBar 生效
   private glassThin: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial({
@@ -216,6 +217,24 @@ struct Index {
     });
   }
 
+  /** 两段式：旧页先浮出（透明 + 上移），再挂载新页浮入 */
+  private switchPage(idx: number): void {
+    if (idx === this.pageIndex) return;
+    animateTo({ duration: 140, curve: Curve.EaseIn }, () => {
+      this.contentAlpha = 0;
+      this.contentShift = -10;
+    });
+    setTimeout(() => {
+      this.pageIndex = idx;
+      this.contentAlpha = 0;
+      this.contentShift = 14;
+      animateTo({ duration: 220, curve: Curve.Friction }, () => {
+        this.contentAlpha = 1;
+        this.contentShift = 0;
+      });
+    }, 140);
+  }
+
   private openMap(): void {
     this.showSheet = false;
     if (this.darkHint === null) {
@@ -330,48 +349,35 @@ struct Index {
       }
 
       Navigation() {
-        Tabs({ barPosition: BarPosition.End, index: this.pageIndex }) {
-        TabContent() {
+        Stack() {
+        if (this.pageIndex === 0) {
           this.PosterPage()
-        }.tabBar(new BottomTabBarStyle($r('app.media.ic_moon'), '今夜')
-          .labelStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' })
-          .iconStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' }))
-
-        TabContent() {
+        } else if (this.pageIndex === 1) {
           this.WeekPage()
-        }.tabBar(new BottomTabBarStyle($r('app.media.ic_week'), '七天')
-          .labelStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' })
-          .iconStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' }))
-
-        TabContent() {
+        } else {
           this.MinePage()
-        }.tabBar(new BottomTabBarStyle($r('app.media.ic_me'), '我的')
-          .labelStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' })
-          .iconStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' }))
-      }
-      .scrollable(false)
-      .barMode(BarMode.Fixed)
-      .barHeight(56)
-      .barBackgroundColor(Color.Transparent)
-      .barOverlap(true)
-      .barFloatingStyle({
-        systemMaterial: this.glassThin,
-        maskColor: Color.Transparent
-      })
-      .animationDuration(200)
-      .width('100%')
-      .height('100%')
-      .onChange((i: number) => {
-        if (i === this.pageIndex) return;
-        this.pageIndex = i;
-        // 先落到"入场前"状态，再动画到常态，得到细微的淡入 + 上浮
-        this.contentAlpha = 0;
-        this.contentShift = 10;
-        animateTo({ duration: 260, curve: Curve.Friction }, () => {
-          this.contentAlpha = 1;
-          this.contentShift = 0;
-        });
-      })
+        }
+        }
+        .width('100%')
+        .height('100%')
+        .transition(TransitionEffect.OPACITY.animation({ duration: 220, curve: Curve.Friction })
+          .combine(TransitionEffect.translate({ y: 16 }).animation({ duration: 220, curve: Curve.Friction })))
+
+        // 自绘玻璃浮岛 Dock（Tabs 的 tabBar 无法接管点击，做不了两段式浮出/浮入）
+        Row() {
+          this.DockItem(0, $r('app.media.ic_moon'), '今夜')
+          this.DockItem(1, $r('app.media.ic_week'), '七天')
+          this.DockItem(2, $r('app.media.ic_me'), '我的')
+        }
+        .width(360)
+        .height(64)
+        .borderRadius(32)
+        .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+        .borderWidth(0.5)
+        .borderColor('#33FFFFFF')
+        .shadow({ radius: 24, color: '#66000000', offsetY: 6 })
+        .position({ x: '50%', y: '100%' })
+        .translate({ x: -180, y: -96 })
       }
       .hideBackButton(true)
       .hideToolBar(true)
@@ -463,17 +469,21 @@ struct Index {
   }
 
   @Builder
-  DockItem(idx: number, label: string) {
+  DockItem(idx: number, icon: Resource, label: string) {
     Column() {
+      Image(icon)
+        .width(22)
+        .height(22)
+        .fillColor(this.pageIndex === idx ? '#FFFFFF' : '#8C8C8C')
       Text(label)
-        .fontSize(13)
+        .fontSize(11)
         .fontColor(this.pageIndex === idx ? '#FFFFFF' : '#8C8C8C')
-        .fontWeight(this.pageIndex === idx ? FontWeight.Medium : FontWeight.Regular)
+        .margin({ top: 3 })
     }
     .layoutWeight(1)
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .onClick(() => { this.pageIndex = idx; })
+    .onClick(() => { this.switchPage(idx); })
   }
 
   @Builder
@@ -685,6 +695,28 @@ struct Index {
     .backgroundColor(Color.Transparent)
     .opacity(this.contentAlpha)
     .translate({ y: this.contentShift })
+    .onTouch((e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      const x: number = e.touches[0].x;
+      const y: number = e.touches[0].y;
+      if (e.type === TouchType.Down) {
+        this.touchStartX = x;
+        this.touchStartY = y;
+      } else if (e.type === TouchType.Up) {
+        const dx: number = x - this.touchStartX;
+        const dy: number = y - this.touchStartY;
+        // 横向位移足够大且明显大于纵向，才算换夜
+        if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+          if (dx > 0) {
+            this.vm.changeNight(1);
+            this.crossFadeBg((this.bgIndex + 1) % this.bgList.length);
+          } else {
+            this.vm.changeNight(-1);
+            this.crossFadeBg((this.bgIndex - 1 + this.bgList.length) % this.bgList.length);
+          }
+        }
+      }
+    })
     .gesture(
       PanGesture({ direction: PanDirection.Vertical, distance: 30 })
         .onActionEnd((e: GestureEvent) => {
@@ -693,23 +725,7 @@ struct Index {
           }
         })
     )
-    .gesture(
-      PanGesture({ direction: PanDirection.Horizontal, distance: 40 })
-        .onActionEnd((e: GestureEvent) => {
-          // 右滑 → 下一晚；左滑 → 上一晚；每换一晚换一张底图
-          // 一次滑动可能触发多次 onActionEnd，做去抖
-          const now: number = Date.now();
-          if (Math.abs(e.offsetX) <= 60 || now - this.lastSwipeMs < 400) return;
-          this.lastSwipeMs = now;
-          if (e.offsetX > 0) {
-            this.vm.changeNight(1);
-            this.crossFadeBg((this.bgIndex + 1) % this.bgList.length);
-          } else {
-            this.vm.changeNight(-1);
-            this.crossFadeBg((this.bgIndex - 1 + this.bgList.length) % this.bgList.length);
-          }
-        })
-    )
+
     .bindSheet($$this.showCity, this.CitySheet(), {
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
