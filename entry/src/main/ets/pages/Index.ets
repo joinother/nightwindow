@@ -34,6 +34,16 @@ struct Index {
   @Local insetTop: number = 0;
   @Local insetLeft: number = 0;
   @Local insetRight: number = 0;
+  @Local bgIndex: number = 0;
+  private bgList: Resource[] = [
+    $r('app.media.bg_pillars'),
+    $r('app.media.bg_heic0515a'),
+    $r('app.media.bg_heic0604a'),
+    $r('app.media.bg_heic0715a'),
+    $r('app.media.bg_heic0910h'),
+    $r('app.media.bg_heic1105a'),
+    $r('app.media.bg_heic1307a')
+  ];
   @Local mapOptions: mapCommon.MapOptions = {
     position: { target: { latitude: 30.67, longitude: 104.06 }, zoom: 10 },
     dayNightMode: mapCommon.DayNightMode.NIGHT
@@ -44,6 +54,7 @@ struct Index {
   private mapCtl: map.MapComponentController | null = null;
   private winRef: window.Window | null = null;
   private insetsBound: boolean = false;
+  private lastSwipeMs: number = 0;
 
   // 系统沉浸式材质：仅 Navigation 标题栏 / 底部 TabBar 生效
   private glassThin: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial({
@@ -264,7 +275,7 @@ struct Index {
   build() {
     Stack() {
       // 星空图常驻垫底：今夜页清晰，七天/我的页模糊
-      Image($r('app.media.bg_pillars'))
+      Image(this.bgList[this.bgIndex])
         .width('100%')
         .height('100%')
         .objectFit(ImageFit.Cover)
@@ -287,6 +298,12 @@ struct Index {
         .width('100%')
         .height('100%')
         .linearGradient({ angle: 180, colors: this.veilColors })
+
+      // 顶部压暗：换到亮底图（如蟹状星云）时保证标题可读
+      Column()
+        .width('100%')
+        .height('100%')
+        .linearGradient({ angle: 180, colors: this.topVeil })
 
       // 非首屏再加一层压暗，保证列表可读，同时保留模糊星空的氛围
       if (this.pageIndex !== 0) {
@@ -316,6 +333,7 @@ struct Index {
           .labelStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' })
           .iconStyle({ selectedColor: '#FFFFFF', unselectedColor: '#8C8C8C' }))
       }
+      .scrollable(false)
       .barMode(BarMode.Fixed)
       .barHeight(56)
       .barBackgroundColor(Color.Transparent)
@@ -494,7 +512,7 @@ struct Index {
           .fontSize(20)
           .fontColor('#FFFFFF')
           .fontWeight(FontWeight.Medium)
-        Text(this.dateText + ' · ' + this.clock)
+        Text(this.vm.dateText + ' · ' + this.clock)
           .fontSize(11)
           .fontColor('#CCCCCC')
           .margin({ top: 2 })
@@ -639,6 +657,23 @@ struct Index {
         .onActionEnd((e: GestureEvent) => {
           if (e.offsetY < -50 && this.pageIndex === 0) {
             this.pageIndex = 1;
+          }
+        })
+    )
+    .gesture(
+      PanGesture({ direction: PanDirection.Horizontal, distance: 40 })
+        .onActionEnd((e: GestureEvent) => {
+          // 右滑 → 下一晚；左滑 → 上一晚；每换一晚换一张底图
+          // 一次滑动可能触发多次 onActionEnd，做去抖
+          const now: number = Date.now();
+          if (Math.abs(e.offsetX) <= 60 || now - this.lastSwipeMs < 400) return;
+          this.lastSwipeMs = now;
+          if (e.offsetX > 0) {
+            this.vm.changeNight(1);
+            this.bgIndex = (this.bgIndex + 1) % this.bgList.length;
+          } else {
+            this.vm.changeNight(-1);
+            this.bgIndex = (this.bgIndex - 1 + this.bgList.length) % this.bgList.length;
           }
         })
     )
@@ -935,6 +970,12 @@ struct Index {
     ['#B80A0A0A', 0.66],
     ['#F20A0A0A', 0.86],
     ['#FF0A0A0A', 1.0]
+  ];
+
+  private topVeil: Array<[ResourceColor, number]> = [
+    ['#A6000000', 0.0],
+    ['#59000000', 0.14],
+    ['#00000000', 0.30]
   ];
 
   private sideVeil: Array<[ResourceColor, number]> = [

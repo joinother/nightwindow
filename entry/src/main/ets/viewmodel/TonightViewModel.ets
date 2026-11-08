@@ -34,7 +34,32 @@ export class TonightViewModel {
   @Trace weekRows: DayScore[] = [];
   @Trace darkHint: DarkHint | null = null;
 
-  ymd: number[] = [2026, 11, 7];
+  /** 相对基准夜（2026-11-07）的偏移，右滑 +1、左滑 -1 */
+  @Trace dayOffset: number = 0;
+
+  private static readonly BASE: number[] = [2026, 11, 7];
+
+  /** 当前夜的年月日 */
+  @Computed
+  get ymd(): number[] {
+    const d: Date = new Date(TonightViewModel.BASE[0], TonightViewModel.BASE[1] - 1,
+      TonightViewModel.BASE[2] + this.dayOffset);
+    return [d.getFullYear(), d.getMonth() + 1, d.getDate()];
+  }
+
+  @Computed
+  get dateText(): string {
+    const d: Date = new Date(TonightViewModel.BASE[0], TonightViewModel.BASE[1] - 1,
+      TonightViewModel.BASE[2] + this.dayOffset);
+    const wd: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    return (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 ' + wd[d.getDay()];
+  }
+
+  /** 切到下一晚（+1）或上一晚（-1） */
+  changeNight(delta: number): void {
+    this.dayOffset = this.dayOffset + delta;
+    this.refresh();
+  }
 
   /** 派生值：城市名 */
   @Computed
@@ -58,11 +83,13 @@ export class TonightViewModel {
   /** 七天概览 */
   week(): DayScore[] {
     const out: DayScore[] = [];
-    const weekdays: string[] = ['周五', '周六', '周日', '周一', '周二', '周三', '周四'];
+    const wdName: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const base: number[] = [8, 14, 22, 30, 38, 26, 12];
     for (let i = 0; i < 7; i++) {
       const d: DayData = this.demoDayOffset(base[i]);
-      const ymd: number[] = [2026, 11, 7 + i];
+      const dt: Date = new Date(TonightViewModel.BASE[0], TonightViewModel.BASE[1] - 1,
+        TonightViewModel.BASE[2] + this.dayOffset + i);
+      const ymd: number[] = [dt.getFullYear(), dt.getMonth() + 1, dt.getDate()];
       let best: ScoreResult | null = null;
       for (const t of DEEP_TARGETS) {
         const w: Window | null = windowFor(d, this.city, t, ymd);
@@ -70,8 +97,8 @@ export class TonightViewModel {
         if (best === null || r.total > best.total) best = r;
       }
       const row: DayScore = new DayScore();
-      row.label = (11).toString() + '月' + (7 + i).toString() + '日';
-      row.weekday = weekdays[i];
+      row.label = (dt.getMonth() + 1).toString() + '月' + dt.getDate().toString() + '日';
+      row.weekday = wdName[dt.getDay()];
       row.total = best === null ? 0 : best.total;
       row.grade = best === null ? '—' : best.grade;
       row.windowText = (best === null || best.window === null) ? '无窗口' : best.window.text;

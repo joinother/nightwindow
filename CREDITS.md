@@ -5,6 +5,7 @@
 | 文件 | 来源 | 作者 | 授权 |
 |---|---|---|---|
 | `entry/src/main/resources/base/media/bg_pillars.jpg` | ESA/Hubble，`heic1501a` | NASA, ESA, and the Hubble Heritage Team (STScI/AURA) | **CC BY 4.0** |
+| `bg_heic0515a.jpg` `bg_heic0604a.jpg` `bg_heic0715a.jpg` `bg_heic0910h.jpg` `bg_heic1105a.jpg` `bg_heic1307a.jpg` | ESA/Hubble（文件名即图源编号） | NASA / ESA / Hubble | **CC BY 4.0** |
 
 原图：<https://esahubble.org/images/heic1501a/>
 
