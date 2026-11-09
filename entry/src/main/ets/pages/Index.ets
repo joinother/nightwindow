@@ -35,9 +35,15 @@ struct Index {
   @Local gridPts: GridPoint[] = [];
   @Local gridLoading: boolean = false;
   @Local gridHint: string = '';
-  @Local mapScope: number = 0;      // 0=本地 1=全国
   private userLat: number = 0;      // 真实定位坐标，0 表示未知
   private userLon: number = 0;
+  private lastSampleLat: number = 0;
+  private lastSampleLon: number = 0;
+  private lastSampleZoom: number = -1;
+  private lastSampleTs: number = 0;
+  private sampleCount: number = 0;
+  private idleTimer: number = -1;
+  private camTimer: number = -1;
   @Local refreshing: boolean = false;
   @Local refreshHint: string = '';
   private hintTimer: number = -1;
@@ -392,7 +398,7 @@ struct Index {
   private centerOnMe(ctrl: map.MapComponentController): void {
     try {
       ctrl.animateCamera(map.newLatLng({ latitude: this.myLat(), longitude: this.myLon() },
-        this.mapScope === 0 ? 9 : 3.6), 0);
+        9), 0);
     } catch (e) {
       console.warn('center camera failed');
     }
@@ -409,73 +415,105 @@ struct Index {
   }
 
   /** 在地图上画 4×4 指数色块 */
+  /** 按当前视野取景：跨度由 zoom 决定，7×7 采样 → 18×18 插值色场 */
   private async drawIndexGrid(ctrl: map.MapComponentController): Promise<void> {
+    if (this.gridLoading) return;
     this.gridLoading = true;
-    this.gridHint = this.mapScope === 0 ? '正在按网格取预报…' : '正在取全国预报…';
+    this.gridHint = '正在取预报…';
     try {
-      await ctrl.clear();
-      this.dropHomeMarker(ctrl);
+      const pos: mapCommon.CameraPosition = ctrl.getCameraPosition();
+      const zoom: number = pos.zoom;
+      // 视野宽度（km）随 zoom 变化，缩放到全国时跨度自然变大
+      const spanKm: number = Math.max(150, Math.min(4500, 42000 / Math.pow(2, zoom)));
+      const lat: number = pos.target.latitude;
+      const lon: number = pos.target.longitude;
+      this.lastSampleLat = lat;
+      this.lastSampleLon = lon;
+      this.lastSampleZoom = zoom;
+      this.lastSampleTs = Date.now();
+      this.sampleCount = this.sampleCount + 1;
+
+      const n: number = 7;
+      const dLat: number = spanKm / 111.0;
+      const dLon: number = spanKm / (111.0 * Math.cos(lat * Math.PI / 180));
       const ctx: common.Context = getContext(this) as common.Context;
-      if (this.mapScope === 1) {
-        await this.drawNational(ctrl, ctx);
-        this.gridLoading = false;
+      const pts: GridPoint[] = await IndexGrid.buildBounds(
+        ctx, lat - dLat / 2, lat + dLat / 2, lon - dLon / 2, lon + dLon / 2, n, this.vm.ymd);
+      this.gridPts = pts;
+
+      const okPts: GridPoint[] = pts.filter((g: GridPoint) => g.ok);
+      if (okPts.length === 0) {
+        this.gridHint = '取数失败';
         return;
       }
-      const pts: GridPoint[] = await IndexGrid.build(ctx, this.vm.city.lat, this.vm.city.lon,
-        4, 30, this.vm.ymd, this.vm.city.bortle);
-      this.gridPts = pts;
-      const okPts: GridPoint[] = pts.filter((g: GridPoint) => g.ok);
-      if (okPts.length > 0) {
-        // 16 个采样点双线性插值成 17×17=289 个小色块，重叠后看起来是连续色场
-        // 插值成 18×18 个无缝拼接的方块（相邻不重叠、不留缝），看起来是连续色场
-        const dense: GridPoint[] = IndexGrid.interpolate(pts, 4, 18);
-        const cellLat: number = (pts[15].lat - pts[0].lat) / 17;
-        const cellLon: number = (pts[15].lon - pts[0].lon) / 17;
-        for (let i = 0; i < dense.length; i += 24) {
-          const batch: GridPoint[] = dense.slice(i, i + 24);
-          const jobs: Promise<void>[] = batch.map((g: GridPoint) => {
-            const half: number = 0.57;
-            const dLat: number = cellLat * half;
-            const dLon: number = cellLon * half;
-            // 边缘淡出：中心不透明、四周渐隐，避免出现生硬的方块边界
-            const cLat: number = (pts[0].lat + pts[15].lat) / 2;
-            const cLon: number = (pts[0].lon + pts[15].lon) / 2;
-            const spanLat: number = Math.abs(pts[15].lat - pts[0].lat) / 2;
-            const spanLon: number = Math.abs(pts[15].lon - pts[0].lon) / 2;
-            const rr: number = Math.max(
-              spanLat > 0 ? Math.abs(g.lat - cLat) / spanLat : 0,
-              spanLon > 0 ? Math.abs(g.lon - cLon) / spanLon : 0);
-            const a: number = Math.round(0xDC - 0xA8 * Math.min(1, rr));
-            const opts: mapCommon.MapPolygonOptions = {
-              points: [
-                { latitude: g.lat - dLat, longitude: g.lon - dLon },
-                { latitude: g.lat - dLat, longitude: g.lon + dLon },
-                { latitude: g.lat + dLat, longitude: g.lon + dLon },
-                { latitude: g.lat + dLat, longitude: g.lon - dLon }
-              ],
-              fillColor: (a << 24) | this.scoreRgb(g.score),
-              strokeWidth: 0,
-              zIndex: 5
-            };
-            return ctrl.addPolygon(opts).then(() => {}).catch(() => {});
-          });
-          await Promise.all(jobs);
-        }
+      let sumScore: number = 0;
+      for (const g of okPts) sumScore += g.score;
+      const avgScore: number = sumScore / okPts.length;
+      for (const g of pts) {
+        if (!g.ok) { g.score = avgScore; g.ok = true; }
       }
-      const okCount: number = okPts.length;
-      this.gridHint = okCount === 0 ? '网格取数失败' : ('网格 ' + okCount.toString() + ' 点');
-      // 画完把镜头拉回网格范围，否则会被标记点带偏
-      try {
-        ctrl.animateCamera(map.newLatLng(
-          { latitude: this.vm.city.lat, longitude: this.vm.city.lon }, 9), 500);
-      } catch (e) {
-        console.warn('animateCamera failed');
+
+      await ctrl.clear();
+      this.dropHomeMarker(ctrl);
+
+      const M: number = 18;
+      const dense: GridPoint[] = IndexGrid.interpolate(pts, n, M);
+      const halfLat: number = (dLat / (n - 1)) * 0.57;
+      const halfLon: number = (dLon / (n - 1)) * 0.57;
+      for (let i = 0; i < dense.length; i += 24) {
+        const batch: GridPoint[] = dense.slice(i, i + 24);
+        const jobs: Promise<void>[] = batch.map((g: GridPoint) => {
+          const rr: number = Math.max(
+            Math.abs(g.lat - lat) / (dLat / 2),
+            Math.abs(g.lon - lon) / (dLon / 2));
+          const a: number = Math.round(0xDC - 0xC4 * Math.min(1, rr));
+          const opts: mapCommon.MapPolygonOptions = {
+            points: [
+              { latitude: g.lat - halfLat, longitude: g.lon - halfLon },
+              { latitude: g.lat - halfLat, longitude: g.lon + halfLon },
+              { latitude: g.lat + halfLat, longitude: g.lon + halfLon },
+              { latitude: g.lat + halfLat, longitude: g.lon - halfLon }
+            ],
+            fillColor: (a << 24) | this.scoreRgb(g.score),
+            strokeWidth: 0,
+            zIndex: 5
+          };
+          return ctrl.addPolygon(opts).then(() => {}).catch(() => {});
+        });
+        await Promise.all(jobs);
       }
+      this.gridHint = '跨度 ' + Math.round(spanKm).toString() + ' km · '
+        + okPts.length.toString() + '/' + pts.length.toString() + ' 点'
+        + (spanKm >= 4400 ? ' · 已达数据上限' : '');
     } catch (e) {
-      this.gridHint = '网格取数失败';
+      this.gridHint = '取数失败';
     } finally {
       this.gridLoading = false;
     }
+  }
+
+  /** 镜头停下后按需重采样（限频，保护配额） */
+  private onCameraIdle(ctrl: map.MapComponentController): void {
+    if (this.idleTimer > 0) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => { this.maybeResample(ctrl); }, 800);
+  }
+
+  private maybeResample(ctrl: map.MapComponentController): void {
+    if (this.gridLoading) return;
+    const pos: mapCommon.CameraPosition = ctrl.getCameraPosition();
+    const spanKm: number = Math.max(150, Math.min(4500, 42000 / Math.pow(2, pos.zoom)));
+    const moved: number = distanceKm(this.lastSampleLat, this.lastSampleLon,
+      pos.target.latitude, pos.target.longitude);
+
+    if (this.sampleCount > 0) {
+      if (Date.now() - this.lastSampleTs < 15000) return;
+      if (Math.abs(pos.zoom - this.lastSampleZoom) < 0.7 && moved < spanKm * 0.35) return;
+      if (this.sampleCount >= 8) {
+        this.gridHint = '本次已取样 8 次 · 重开地图可刷新';
+        return;
+      }
+    }
+    this.drawIndexGrid(ctrl);
   }
 
   /** 全国视图：17×17 采样 → 24×24 方块插值成连续色场 */
@@ -529,13 +567,6 @@ struct Index {
     } catch (e) {
       console.warn('national camera failed');
     }
-  }
-
-  /** 切换本地 / 全国 */
-  private switchScope(v: number): void {
-    if (this.mapScope === v || this.mapCtl === null) return;
-    this.mapScope = v;
-    this.drawIndexGrid(this.mapCtl);
   }
 
   private openMap(): void {
@@ -790,31 +821,6 @@ struct Index {
             .position({ left: 20, top: 20 + this.insetTop })
             .hitTestBehavior(HitTestMode.None)
 
-          // 顶部中间：本地 / 全国
-          Row({ space: 0 }) {
-            Text('本地')
-              .fontSize(12)
-              .fontColor(this.mapScope === 0 ? '#0A0A0A' : '#FFFFFF')
-              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-              .backgroundColor(this.mapScope === 0 ? '#FFFFFF' : Color.Transparent)
-              .borderRadius(16)
-              .onClick(() => { this.switchScope(0); })
-            Text('全国')
-              .fontSize(12)
-              .fontColor(this.mapScope === 1 ? '#0A0A0A' : '#FFFFFF')
-              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-              .backgroundColor(this.mapScope === 1 ? '#FFFFFF' : Color.Transparent)
-              .borderRadius(16)
-              .onClick(() => { this.switchScope(1); })
-          }
-          .padding(3)
-          .borderRadius(19)
-          .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-          .borderWidth(0.5)
-          .borderColor('#33FFFFFF')
-          .position({ left: '50%', top: 20 + this.insetTop })
-          .translate({ x: -62 })
-
           // 右上：圆形关闭按钮，和地图自带控件同一种材质
           Stack({ alignContent: Alignment.Center }) {
             Column()
@@ -837,7 +843,10 @@ struct Index {
           .borderWidth(0.5)
           .borderColor('#33FFFFFF')
           .position({ right: 20, top: 20 + this.insetTop })
-          .onClick(() => { this.showMap = false; })
+          .onClick(() => {
+            if (this.camTimer > 0) { clearInterval(this.camTimer); this.camTimer = -1; }
+            this.showMap = false;
+          })
 
           // 左下：磨砂图例
           Column({ space: 6 }) {
@@ -897,7 +906,9 @@ struct Index {
       console.warn('setMyLocationEnabled failed');
     }
     this.centerOnMe(ctrl);
-    this.dropHomeMarker(ctrl);
+    // 事件监听在部分设备上不触发，改用定时轮询镜头位置（2s 一次，开销可忽略）
+    if (this.camTimer > 0) clearInterval(this.camTimer);
+    this.camTimer = setInterval(() => { this.onCameraIdle(ctrl); }, 2000);
     this.drawIndexGrid(ctrl);
   }
 
