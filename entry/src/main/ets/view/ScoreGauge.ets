@@ -63,10 +63,10 @@ export struct ScoreGauge {
     c.fillStyle = face;
     c.fill();
 
-    // 彩虹弧带：绿 → 黄 → 橙 → 红
+    // 彩虹弧带：红 → 橙 → 黄 → 绿（分数越高越绿，与地图图例一致）
     const bandR: number = R * 0.74;
     const zones: number[] = [0, 25, 50, 75, 100];
-    const zoneColors: string[] = ['#2FA84F', '#D9B62B', '#E8892B', '#D8432E'];
+    const zoneColors: string[] = ['#D8432E', '#E8892B', '#D9B62B', '#2FA84F'];
     for (let i = 0; i < 4; i++) {
       c.beginPath();
       c.arc(cx, cy, bandR, this.angleFor(zones[i]), this.angleFor(zones[i + 1]));
