@@ -23,7 +23,7 @@ export class WeatherRepo {
    * 是否允许境外源兜底。
    * 发布版必须为 false（数据不出境原则）；开发期置 true 便于验证链路。
    */
-  private static readonly ALLOW_FOREIGN: boolean = true;
+  private static readonly ALLOW_FOREIGN: boolean = false;
 
   private static key(lat: number, lon: number): string {
     return (Math.round(lat * 10) / 10).toFixed(1) + ',' + (Math.round(lon * 10) / 10).toFixed(1);
@@ -66,7 +66,7 @@ export class WeatherRepo {
     const arr: string[] = [];
     for (const h of d.hourly) {
       arr.push([h.cloud, h.cloudLow, h.cloudMid, h.cloudHigh, h.visibility, h.humidity,
-        h.pressure, h.windSpeed, h.windDir, h.precip, h.temp].join(','));
+        h.pressure, h.windSpeed, h.windDir, h.precip, h.temp, h.dewPoint].join(','));
     }
     const head: string[] = [d.date, d.transp.toString(), d.seeing.toString(), d.aod.toString()];
     return JSON.stringify({ 'head': head, 'rows': arr });
@@ -95,6 +95,7 @@ export class WeatherRepo {
       h.windDir = Number(f[8]);
       h.precip = Number(f[9]);
       h.temp = Number(f[10]);
+      h.dewPoint = f.length > 11 ? Number(f[11]) : -999;
       d.hourly.push(h);
     }
     return d;

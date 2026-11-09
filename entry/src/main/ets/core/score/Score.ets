@@ -147,11 +147,16 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
   // 露点：用 Magnus 公式从温度/湿度推算，温差即结露风险
   let dewSpread: number = 6;
   {
-    const t: number = day.hourly.length > 0 ? day.hourly[Math.floor(day.hourly.length / 2)].temp : 15;
-    const rh: number = day.hourly.length > 0 ? day.hourly[Math.floor(day.hourly.length / 2)].humidity : 60;
-    const g: number = Math.log(Math.max(1, rh) / 100) + 17.62 * t / (243.12 + t);
-    const dewPoint: number = 243.12 * g / (17.62 - g);
-    dewSpread = Math.max(0, t - dewPoint);
+    const mid: HourlyWeather = day.hourly[Math.floor(day.hourly.length / 2)];
+    if (mid !== undefined && mid.dewPoint > -100) {
+      // 有实测露点直接用
+      dewSpread = Math.max(0, mid.temp - mid.dewPoint);
+    } else if (mid !== undefined) {
+      const t: number = mid.temp;
+      const rh: number = mid.humidity;
+      const g: number = Math.log(Math.max(1, rh) / 100) + 17.62 * t / (243.12 + t);
+      dewSpread = Math.max(0, t - 243.12 * g / (17.62 - g));
+    }
   }
   const dewS: number = clamp(dewSpread / 8, 0, 1) * 100;
 

@@ -36,6 +36,7 @@ export class HourlyWeather {
   @Trace windDir: number = 0;     // 度，风的来向
   @Trace precip: number = 0;      // mm/h，降水
   @Trace temp: number = 15;       // °C
+  @Trace dewPoint: number = -999; // °C，-999 表示未知
 }
 
 /** 一天的天气数据（含非逐小时的辅助量） */
