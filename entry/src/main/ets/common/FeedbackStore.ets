@@ -29,9 +29,34 @@ export class FeedbackStore {
     return all[dateKey] !== undefined;
   }
 
-  static async save(ctx: common.Context, dateKey: string, value: number): Promise<void> {
+  /** 各档对应的实际云量中值（用于校准） */
+  private static readonly OBS_CLOUD: number[] = [5, 25, 55, 90];
+
+  /** 存反馈，同时记下当时的预报云量，供日后校准 */
+  /**
+   * 从历史反馈学出「预报云量偏差」：正数=预报偏少，负数=预报偏多。
+   * 样本不足 3 条返回 0，不做校正。
+   */
+  static async cloudBias(ctx: common.Context): Promise<number> {
     const all: Record<string, string> = await FeedbackStore.readAll(ctx);
-    all[dateKey] = value.toString();
+    let diff: number = 0;
+    let n: number = 0;
+    for (const k of Object.keys(all)) {
+      const parts: string[] = all[k].split('|');
+      const v: number = Number(parts[0]);
+      const p: number = parts.length > 1 ? Number(parts[1]) : -1;
+      if (v < 0 || v > 3 || p < 0) continue;
+      diff += FeedbackStore.OBS_CLOUD[v] - p;
+      n++;
+    }
+    if (n < 3) return 0;
+    return Math.max(-20, Math.min(20, diff / n));
+  }
+
+  static async save(ctx: common.Context, dateKey: string, value: number,
+    predicted: number = -1): Promise<void> {
+    const all: Record<string, string> = await FeedbackStore.readAll(ctx);
+    all[dateKey] = value.toString() + '|' + Math.round(predicted).toString();
     const p: preferences.Preferences = await FeedbackStore.open(ctx);
     await p.put(FeedbackStore.KEY, JSON.stringify(all));
     await p.flush();

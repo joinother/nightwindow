@@ -19,6 +19,17 @@ export const MOON_TARGET: TargetPoint = new TargetPoint('月亮', 0, 0, 'moon');
 /** 18:00 起算的小时表 */
 export const HOURS: number[] = [18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6];
 
+/** 由用户反馈学到的云量偏差（正=预报偏少，负=预报偏多），单位：百分点 */
+let CLOUD_BIAS: number = 0;
+
+export function setCloudBias(v: number): void {
+  CLOUD_BIAS = v < -20 ? -20 : (v > 20 ? 20 : v);
+}
+
+export function getCloudBias(): number {
+  return CLOUD_BIAS;
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
@@ -117,7 +128,7 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
     const layered: boolean = h.cloudLow + h.cloudMid + h.cloudHigh > 0;
     sum += layered ? effCloud(h) : h.cloud;
   }
-  const cMean: number = sum / seg.length;
+  const cMean: number = clamp(sum / seg.length + CLOUD_BIAS, 0, 100);
   let varSum: number = 0;
   for (const h of seg) {
     const layered: boolean = h.cloudLow + h.cloudMid + h.cloudHigh > 0;
@@ -133,7 +144,15 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
 
   // 视宁、露点
   const seeingS: number = clamp((3.5 - day.seeing) / 2.5, 0, 1) * 100;
-  const dewSpread: number = 6; // 演示值，接入真实露点后替换
+  // 露点：用 Magnus 公式从温度/湿度推算，温差即结露风险
+  let dewSpread: number = 6;
+  {
+    const t: number = day.hourly.length > 0 ? day.hourly[Math.floor(day.hourly.length / 2)].temp : 15;
+    const rh: number = day.hourly.length > 0 ? day.hourly[Math.floor(day.hourly.length / 2)].humidity : 60;
+    const g: number = Math.log(Math.max(1, rh) / 100) + 17.62 * t / (243.12 + t);
+    const dewPoint: number = 243.12 * g / (17.62 - g);
+    dewSpread = Math.max(0, t - dewPoint);
+  }
   const dewS: number = clamp(dewSpread / 8, 0, 1) * 100;
 
   // 目标高度角 → 大气质量 → 消光
@@ -177,6 +196,7 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
   res.weather = Math.round(weather);
   res.sky = Math.round(sky);
   res.cloud = Math.round(cloudS);
+  res.cloudPct = Math.round(cMean);
   res.transp = Math.round(transpS);
   res.seeing = Math.round(seeingS);
   res.dew = Math.round(dewS);

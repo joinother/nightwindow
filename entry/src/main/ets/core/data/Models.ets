@@ -24,7 +24,8 @@ export class City {
 @ObservedV2
 export class HourlyWeather {
   @Trace time: number = 0;        // epoch ms
-  @Trace cloud: number = 0;       // 0-100 总云量
+  @Trace cloud: number = 0;
+  @Trace cloudPct: number = 0;   // 窗口内平均云量 0-100（用于反馈校准）       // 0-100 总云量
   @Trace cloudLow: number = 0;    // 0-100 低云
   @Trace cloudMid: number = 0;    // 0-100 中云
   @Trace cloudHigh: number = 0;   // 0-100 高云
@@ -84,6 +85,7 @@ export class ScoreResult {
   @Trace weather: number = 0;
   @Trace sky: number = 0;
   @Trace cloud: number = 0;
+  @Trace cloudPct: number = 0;   // 窗口内平均云量 0-100（用于反馈校准）
   @Trace transp: number = 0;
   @Trace seeing: number = 0;
   @Trace dew: number = 0;

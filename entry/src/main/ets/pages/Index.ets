@@ -2,6 +2,8 @@ import { TonightViewModel, DayScore, CITIES } from '../viewmodel/TonightViewMode
 import { ScoreResult, City } from '../core/data/Models';
 import { nearestDarkSite, DarkHint } from '../core/data/DarkSites';
 import { FeedbackStore } from '../common/FeedbackStore';
+import { setCloudBias } from '../core/score/Score';
+import { Logger } from '../common/Logger';
 import { ScoreGauge } from '../view/ScoreGauge';
 import { common } from '@kit.AbilityKit';
 import { display } from '@kit.ArkUI';
@@ -120,6 +122,21 @@ struct Index {
     }
   }
 
+  /** 用历史反馈校正云量预报偏差，然后重算 */
+  private async applyLearnedBias(): Promise<void> {
+    try {
+      const ctx: common.Context = getContext(this) as common.Context;
+      const b: number = await FeedbackStore.cloudBias(ctx);
+      if (b !== 0) {
+        setCloudBias(b);
+        this.vm.refresh();
+        Logger.info('cloud bias applied: ' + b.toFixed(1));
+      }
+    } catch (e) {
+      console.warn('applyLearnedBias failed');
+    }
+  }
+
   private dateKey(d: Date): string {
     const m: number = d.getMonth() + 1;
     const day: number = d.getDate();
@@ -132,7 +149,7 @@ struct Index {
       const ctx: common.Context = getContext(this) as common.Context;
       const d: Date = new Date();
       d.setDate(d.getDate() - 1);
-      await FeedbackStore.save(ctx, this.dateKey(d), v);
+      await FeedbackStore.save(ctx, this.dateKey(d), v, this.vm.result.cloudPct);
     } catch (e) {
       // ignore
     }
@@ -343,6 +360,7 @@ struct Index {
     this.vm.refresh();
     this.applySafeInsets();
     this.bindTilt();
+    this.applyLearnedBias();
     this.checkFeedback();
     this.aboutToAppearClock();
   }
