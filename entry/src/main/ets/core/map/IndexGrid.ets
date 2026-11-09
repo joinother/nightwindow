@@ -33,6 +33,36 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): num
  * 等 VIIRS 栅格接入后替换（文档 §6.9 / B11）。
  */
 export class IndexGrid {
+  /** 把采样网格双线性插值成更密的网格，用于连续渲染 */
+  static interpolate(samples: GridPoint[], n: number, outN: number): GridPoint[] {
+    const out: GridPoint[] = [];
+    for (let i = 0; i < outN; i++) {
+      for (let j = 0; j < outN; j++) {
+        const fx: number = (n - 1) * i / (outN - 1);
+        const fy: number = (n - 1) * j / (outN - 1);
+        const x0: number = Math.floor(fx);
+        const y0: number = Math.floor(fy);
+        const x1: number = Math.min(n - 1, x0 + 1);
+        const y1: number = Math.min(n - 1, y0 + 1);
+        const tx: number = fx - x0;
+        const ty: number = fy - y0;
+        const p00: GridPoint = samples[x0 * n + y0];
+        const p10: GridPoint = samples[x1 * n + y0];
+        const p01: GridPoint = samples[x0 * n + y1];
+        const p11: GridPoint = samples[x1 * n + y1];
+        const top: number = p00.score * (1 - tx) + p10.score * tx;
+        const bot: number = p01.score * (1 - tx) + p11.score * tx;
+        const g: GridPoint = new GridPoint();
+        g.score = top * (1 - ty) + bot * ty;
+        g.lat = p00.lat + (p10.lat - p00.lat) * tx + ((p01.lat - p00.lat) * ty);
+        g.lon = p00.lon + (p10.lon - p00.lon) * tx + ((p01.lon - p00.lon) * ty);
+        g.ok = p00.ok && p10.ok && p01.ok && p11.ok;
+        out.push(g);
+      }
+    }
+    return out;
+  }
+
   /** 距离 → Bortle 的粗估阶梯 */
   private static bortleAt(lat: number, lon: number, fallback: number): number {
     let minD: number = 1e9;

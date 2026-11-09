@@ -347,6 +347,23 @@ struct Index {
     });
   }
 
+  /** 分数 → 平滑 RGB（绿→黄绿→黄→橙→红） */
+  private scoreRgb(v: number): number {
+    const stops: number[] = [0, 20, 40, 60, 80, 100];
+    const cols: number[] = [0xD8432E, 0xE8892B, 0xD9B62B, 0xA8C256, 0x4CAF50, 0x4CAF50];
+    const t: number = Math.max(0, Math.min(100, v));
+    let i: number = 0;
+    while (i < stops.length - 2 && t > stops[i + 1]) i++;
+    const span: number = stops[i + 1] - stops[i];
+    const k: number = span <= 0 ? 0 : (t - stops[i]) / span;
+    const c0: number = cols[i];
+    const c1: number = cols[i + 1];
+    const r: number = Math.round((c0 >> 16 & 0xFF) + ((c1 >> 16 & 0xFF) - (c0 >> 16 & 0xFF)) * k);
+    const g: number = Math.round((c0 >> 8 & 0xFF) + ((c1 >> 8 & 0xFF) - (c0 >> 8 & 0xFF)) * k);
+    const b: number = Math.round((c0 & 0xFF) + ((c1 & 0xFF) - (c0 & 0xFF)) * k);
+    return (r << 16) | (g << 8) | b;
+  }
+
   /** 评分 → 颜色（与表盘彩虹同语义：绿好红差） */
   private scoreColor(v: number, alpha: number): number {
     let rgb: number = 0x000000;
@@ -367,24 +384,45 @@ struct Index {
       const pts: GridPoint[] = await IndexGrid.build(ctx, this.vm.city.lat, this.vm.city.lon,
         4, 30, this.vm.ymd, this.vm.city.bortle);
       this.gridPts = pts;
-      let okCount: number = 0;
-      for (const p of pts) {
-        if (!p.ok) continue;
-        okCount++;
-        const opts: mapCommon.MapCircleOptions = {
-          center: { latitude: p.lat, longitude: p.lon },
-          radius: 8000,
-          fillColor: this.scoreColor(p.score, 0x5F),
-          strokeColor: this.scoreColor(p.score, 0xCC),
-          strokeWidth: 1.5,
-          zIndex: 5
-        };
-        try {
-          await ctrl.addCircle(opts);
-        } catch (e) {
-          console.warn('addCircle failed');
+      const okPts: GridPoint[] = pts.filter((g: GridPoint) => g.ok);
+      if (okPts.length > 0) {
+        // 16 个采样点双线性插值成 17×17=289 个小色块，重叠后看起来是连续色场
+        // 插值成 18×18 个无缝拼接的方块（相邻不重叠、不留缝），看起来是连续色场
+        const dense: GridPoint[] = IndexGrid.interpolate(pts, 4, 18);
+        const cellLat: number = (pts[15].lat - pts[0].lat) / 17;
+        const cellLon: number = (pts[15].lon - pts[0].lon) / 17;
+        for (let i = 0; i < dense.length; i += 24) {
+          const batch: GridPoint[] = dense.slice(i, i + 24);
+          const jobs: Promise<void>[] = batch.map((g: GridPoint) => {
+            const half: number = 0.52;
+            const dLat: number = cellLat * half;
+            const dLon: number = cellLon * half;
+            // 边缘淡出：中心不透明、四周渐隐，避免出现生硬的方块边界
+            const cLat: number = (pts[0].lat + pts[15].lat) / 2;
+            const cLon: number = (pts[0].lon + pts[15].lon) / 2;
+            const spanLat: number = Math.abs(pts[15].lat - pts[0].lat) / 2;
+            const spanLon: number = Math.abs(pts[15].lon - pts[0].lon) / 2;
+            const rr: number = Math.max(
+              spanLat > 0 ? Math.abs(g.lat - cLat) / spanLat : 0,
+              spanLon > 0 ? Math.abs(g.lon - cLon) / spanLon : 0);
+            const a: number = Math.round(0xDC - 0xA8 * Math.min(1, rr));
+            const opts: mapCommon.MapPolygonOptions = {
+              points: [
+                { latitude: g.lat - dLat, longitude: g.lon - dLon },
+                { latitude: g.lat - dLat, longitude: g.lon + dLon },
+                { latitude: g.lat + dLat, longitude: g.lon + dLon },
+                { latitude: g.lat + dLat, longitude: g.lon - dLon }
+              ],
+              fillColor: (a << 24) | this.scoreRgb(g.score),
+              strokeWidth: 0,
+              zIndex: 5
+            };
+            return ctrl.addPolygon(opts).then(() => {}).catch(() => {});
+          });
+          await Promise.all(jobs);
         }
       }
+      const okCount: number = okPts.length;
       this.gridHint = okCount === 0 ? '网格取数失败' : ('网格 ' + okCount.toString() + ' 点');
       // 画完把镜头拉回网格范围，否则会被标记点带偏
       try {
@@ -732,6 +770,13 @@ struct Index {
       ctrl.setMyLocationEnabled(true);
     } catch (e) {
       console.warn('setMyLocationEnabled failed');
+    }
+    // 先摆好镜头，避免加载期间停在西岭雪山
+    try {
+      ctrl.animateCamera(map.newLatLng(
+        { latitude: this.vm.city.lat, longitude: this.vm.city.lon }, 9), 0);
+    } catch (e) {
+      console.warn('initial camera failed');
     }
     this.dropMarker(ctrl);
     this.drawIndexGrid(ctrl);
