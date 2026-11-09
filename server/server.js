@@ -6,6 +6,8 @@
  *  - 上游按 0.5° 取整去重 + 30 分钟缓存
  */
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { URL } = require('url');
 
 const PORT = Number(process.env.NW_PORT || 8090);
@@ -13,6 +15,8 @@ const QW_HOST = process.env.QW_HOST || 'mn6hf38tay.re.qweatherapi.com';
 const QW_KEY = process.env.QW_KEY || '';
 const TTL_MS = Number(process.env.NW_TTL_MS || 30 * 60 * 1000);
 const MAX_KEYS = 800;
+const CACHE_FILE = process.env.NW_CACHE_FILE || '/var/lib/nightwindow/wx-cache.json';
+const CACHE_VERSION = 1;
 
 
 // 世界主要城市/暗夜地（世界视图用；点太密会烧配额，75 个足够铺出格局）
@@ -48,6 +52,52 @@ const cache = new Map(); // key -> {ts, hours}
 const negCache = new Map(); // key -> ts（失败点短期不再重试）
 const NEG_TTL = 10 * 60 * 1000;
 const ipHits = new Map(); // ip -> {ts, count}
+
+/** 启动时把上次落盘的缓存读回来，重启不再冷启动 */
+function loadCache() {
+  try {
+    const obj = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    if (obj.v !== CACHE_VERSION || typeof obj.items !== 'object') return;
+    const now = Date.now();
+    let n = 0;
+    for (const k of Object.keys(obj.items)) {
+      const v = obj.items[k];
+      if (v && typeof v.ts === 'number' && Array.isArray(v.hours) && now - v.ts < TTL_MS) {
+        cache.set(k, { ts: v.ts, hours: v.hours });
+        n++;
+      }
+    }
+    if (n > 0) log('cache restored', n, 'keys');
+  } catch (e) {
+    // 首次运行或文件损坏，按空缓存启动
+  }
+}
+
+let saveTimer = null;
+
+/** 15 秒合并写盘，避免每次上游返回都碰磁盘 */
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => { saveTimer = null; saveNow(); }, 15000);
+  if (typeof saveTimer.unref === 'function') saveTimer.unref();
+}
+
+/** 原子写：先写 .tmp 再 rename，进程被杀也不会留半个文件 */
+function saveNow() {
+  try {
+    fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
+    const items = {};
+    const now = Date.now();
+    for (const [k, v] of cache) {
+      if (now - v.ts < TTL_MS) items[k] = { ts: v.ts, hours: v.hours };
+    }
+    const tmp = CACHE_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ v: CACHE_VERSION, saved: now, items }), 'utf8');
+    fs.renameSync(tmp, CACHE_FILE);
+  } catch (e) {
+    log('cache save failed', e.message);
+  }
+}
 
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 
@@ -111,6 +161,7 @@ async function fetchPoint(lat, lon) {
     const hours = body.hourly.map(simplify);
     if (cache.size > MAX_KEYS) cache.delete(cache.keys().next().value);
     cache.set(key, { ts: now, hours });
+    scheduleSave();
     return hours;
   } catch (e) {
     log('fetch fail', loc, e.message);
@@ -215,4 +266,14 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+loadCache();
+
 server.listen(PORT, '127.0.0.1', () => log('nightwindow-api listening on', PORT, 'cache keys', cache.size));
+
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => {
+    log('shutting down, flushing cache', sig);
+    saveNow();
+    process.exit(0);
+  });
+}

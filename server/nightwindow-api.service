@@ -14,7 +14,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/log
+ReadWritePaths=/var/log /var/lib/nightwindow
+StateDirectory=nightwindow
 StandardOutput=append:/var/log/nightwindow-api.log
 StandardError=append:/var/log/nightwindow-api.log
 

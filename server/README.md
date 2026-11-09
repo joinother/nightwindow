@@ -63,6 +63,23 @@ nginx -t -c /etc/skyinstrument-website/nginx.conf && \
 
 和风对海面与境外坐标返回 **400**，这类点会进 10 分钟负缓存，不再重复请求。
 
+## 缓存
+
+两层：内存 + 磁盘。重启不冷启动。
+
+| 项 | 值 |
+|---|---|
+| 键 | 0.5° 取整坐标（≈55km 合并）|
+| TTL | 30 分钟（`NW_TTL_MS` 可覆盖）|
+| 上限 | 800 条，超出按插入顺序淘汰 |
+| 落盘 | `/var/lib/nightwindow/wx-cache.json`（`NW_CACHE_FILE` 可覆盖）|
+| 落盘时机 | 上游返回后 15 秒合并写一次；SIGTERM 时立即刷盘 |
+| 写入方式 | 先写 `.tmp` 再 `rename`，进程被杀也不会留半个文件 |
+| 负缓存 | 400/204/404 的坐标记 10 分钟，不再重试 |
+
+systemd 用 `StateDirectory=nightwindow` 自动创建 `/var/lib/nightwindow`，
+并在 `ReadWritePaths` 里放行（服务开了 `ProtectSystem=strict`，不加会写失败）。
+
 ## 配额
 
 - 单点：每个 0.5° 格子 30 分钟一次
