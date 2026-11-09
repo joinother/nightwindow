@@ -35,7 +35,39 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): num
  * 等 VIIRS 栅格接入后替换（文档 §6.9 / B11）。
  */
 export class IndexGrid {
-  /** 全国：按城市点逐个算分（不插值，跨 500km 插值是假精度） */
+  /** 全国：在给定经纬度范围内铺 n×n 个采样点（用于插值成连续色场） */
+  static async buildBounds(ctx: common.Context, latMin: number, latMax: number,
+    lonMin: number, lonMax: number, n: number, ymd: number[]): Promise<GridPoint[]> {
+    const pts: GridPoint[] = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const p: GridPoint = new GridPoint();
+        p.lat = latMin + (latMax - latMin) * i / (n - 1);
+        p.lon = lonMin + (lonMax - lonMin) * j / (n - 1);
+        p.bortle = IndexGrid.bortleAt(p.lat, p.lon, 6);
+        pts.push(p);
+      }
+    }
+    const CHUNK: number = 6;
+    for (let s = 0; s < pts.length; s += CHUNK) {
+      const slice: GridPoint[] = pts.slice(s, s + CHUNK);
+      const jobs: Promise<void>[] = slice.map((p: GridPoint) => {
+        return WeatherRepo.load(ctx, p.lat, p.lon, false, false).then((b) => {
+          if (!b.ok) {
+            p.ok = false;
+            return;
+          }
+          const r: ScoreResult = IndexGrid.scoreAt(b.day, p.lat, p.lon, p.bortle, ymd);
+          p.score = r.total;
+          p.ok = true;
+        });
+      });
+      await Promise.all(jobs);
+    }
+    return pts;
+  }
+
+  /** 按城市点逐个算分（备用，暂未使用） */
   static async buildNational(ctx: common.Context, ymd: number[]): Promise<GridPoint[]> {
     const pts: GridPoint[] = [];
     for (const c of CHINA_CITIES) {

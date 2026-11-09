@@ -478,30 +478,54 @@ struct Index {
     }
   }
 
-  /** 全国视图：按城市点着色，圆点标注省会/港澳台/暗夜地 */
+  /** 全国视图：17×17 采样 → 24×24 方块插值成连续色场 */
   private async drawNational(ctrl: map.MapComponentController, ctx: common.Context): Promise<void> {
-    const pts: GridPoint[] = await IndexGrid.buildNational(ctx, this.vm.ymd);
+    const N: number = 9;
+    const pts: GridPoint[] = await IndexGrid.buildBounds(ctx, 18, 54, 74, 135, N, this.vm.ymd);
     this.gridPts = pts;
-    let ok: number = 0;
-    for (let i = 0; i < pts.length; i += 12) {
-      const batch: GridPoint[] = pts.slice(i, i + 12);
-      const jobs: Promise<void>[] = batch.map((g: GridPoint) => {
-        if (!g.ok) return Promise.resolve();
-        ok++;
-        const opts: mapCommon.MapCircleOptions = {
-          center: { latitude: g.lat, longitude: g.lon },
-          radius: 45000,
-          fillColor: (0xCC << 24) | this.scoreRgb(g.score),
-          strokeWidth: 0,
-          zIndex: 5
-        };
-        return ctrl.addCircle(opts).then(() => {}).catch(() => {});
-      });
-      await Promise.all(jobs);
+    const okPts: GridPoint[] = pts.filter((g: GridPoint) => g.ok);
+    this.gridHint = '全国 ' + okPts.length.toString() + ' 点';
+
+    if (okPts.length > 0) {
+      // 取数失败的点用平均值补齐，否则会被当成 0 分渲染成大片红色
+      let sumScore: number = 0;
+      for (const g of okPts) sumScore += g.score;
+      const avgScore: number = sumScore / okPts.length;
+      for (const g of pts) {
+        if (!g.ok) {
+          g.score = avgScore;
+          g.ok = true;
+        }
+      }
+      const M: number = 30;
+      const dense: GridPoint[] = IndexGrid.interpolate(pts, N, M);
+      const halfLat: number = (54 - 18) / (N - 1) * 0.57;
+      const halfLon: number = (135 - 74) / (N - 1) * 0.57;
+      for (let i = 0; i < dense.length; i += 24) {
+        const batch: GridPoint[] = dense.slice(i, i + 24);
+        const jobs: Promise<void>[] = batch.map((g: GridPoint) => {
+          const opts: mapCommon.MapPolygonOptions = {
+            points: [
+              { latitude: g.lat - halfLat, longitude: g.lon - halfLon },
+              { latitude: g.lat - halfLat, longitude: g.lon + halfLon },
+              { latitude: g.lat + halfLat, longitude: g.lon + halfLon },
+              { latitude: g.lat + halfLat, longitude: g.lon - halfLon }
+            ],
+            fillColor: (0xB4 << 24) | this.scoreRgb(g.score),
+            strokeWidth: 0,
+            zIndex: 5
+          };
+          return ctrl.addPolygon(opts).then(() => {}).catch(() => {});
+        });
+        await Promise.all(jobs);
+      }
     }
-    this.gridHint = '全国 ' + ok.toString() + ' 城';
     try {
-      ctrl.animateCamera(map.newLatLng({ latitude: 34.5, longitude: 106.0 }, 3.4), 400);
+      // 按中国范围自动取景，别用固定 zoom 猜
+      ctrl.animateCamera(map.newLatLngBounds({
+        southwest: { latitude: 16, longitude: 72 },
+        northeast: { latitude: 55, longitude: 137 }
+      }, 24), 400);
     } catch (e) {
       console.warn('national camera failed');
     }
