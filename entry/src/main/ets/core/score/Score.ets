@@ -16,6 +16,13 @@ export const DEEP_TARGETS: TargetPoint[] = [
 export const PLANET_SATURN: TargetPoint = new TargetPoint('土星', 23.00, -6.00, 'planet');
 export const MOON_TARGET: TargetPoint = new TargetPoint('月亮', 0, 0, 'moon');
 
+/** 按 18:00 起算的下标取小时数据；数据不足时退回最后一条，避免越界 */
+function hourAtSafe(day: DayData, i: number): HourlyWeather | null {
+  if (day.hourly.length === 0) return null;
+  const idx: number = Math.min(i, day.hourly.length - 1);
+  return day.hourly[idx];
+}
+
 /** 18:00 起算的小时表 */
 export const HOURS: number[] = [18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6];
 
@@ -51,7 +58,8 @@ export function windowFor(day: DayData, city: City, target: TargetPoint, ymd: nu
       alt = altOf(target.ra, target.dec, jd, city.lat, city.lon);
     }
 
-    let good: boolean = day.hourly[i].cloud <= 45 && alt > minAlt;
+    const hw: HourlyWeather | null = hourAtSafe(day, i);
+    let good: boolean = hw !== null && hw.cloud <= 45 && alt > minAlt;
 
     const sunA: number = sunAlt(jd, city.lat, city.lon);
     const moonUp: boolean = moonAlt(jd, city.lat, city.lon) > 0;

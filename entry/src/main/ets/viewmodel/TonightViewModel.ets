@@ -142,8 +142,16 @@ export class TonightViewModel {
 
   /** 切到下一晚（+1）或上一晚（-1） */
   changeNight(delta: number): void {
-    this.dayOffset = this.dayOffset + delta;
-    this.refresh();
+    const next: number = this.dayOffset + delta;
+    // 限制在 -6..+6，避免滑到没有数据也没有意义的日期
+    if (next < -6 || next > 6) return;
+    this.dayOffset = next;
+    try {
+      this.refresh();
+    } catch (e) {
+      const err = e as Error;
+      console.error('NightWindow changeNight failed: ' + err.message);
+    }
   }
 
   /** 派生值：城市名 */

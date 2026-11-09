@@ -1492,12 +1492,17 @@ struct Index {
           const now: number = Date.now();
           if (Math.abs(e.offsetX) <= 60 || now - this.lastSwipeMs < 400) return;
           this.lastSwipeMs = now;
-          if (e.offsetX > 0) {
-            this.vm.changeNight(1);
-            this.crossFadeBg((this.bgIndex + 1) % this.bgList.length);
-          } else {
-            this.vm.changeNight(-1);
-            this.crossFadeBg((this.bgIndex - 1 + this.bgList.length) % this.bgList.length);
+          try {
+            if (e.offsetX > 0) {
+              this.vm.changeNight(1);
+              this.crossFadeBg((this.bgIndex + 1) % this.bgList.length);
+            } else {
+              this.vm.changeNight(-1);
+              this.crossFadeBg((this.bgIndex - 1 + this.bgList.length) % this.bgList.length);
+            }
+          } catch (err) {
+            const error = err as Error;
+            console.error('NightWindow swipe failed: ' + error.message + ' | ' + (error.stack ?? ''));
           }
         })
     )

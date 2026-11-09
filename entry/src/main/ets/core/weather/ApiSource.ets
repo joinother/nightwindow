@@ -165,6 +165,25 @@ export class ApiSource {
     for (const dateStr of byDate.keys()) {
       const bucket: HourlyWeather[] = byDate.get(dateStr) as HourlyWeather[];
       if (bucket.length < 3) continue;
+      // 首夜/末夜可能只有几小时，补齐 13 个槽位（18:00–06:00），
+      // 否则评分按 13 个下标取值会越界
+      while (bucket.length < 13) {
+        const last: HourlyWeather = bucket[bucket.length - 1];
+        const clone: HourlyWeather = new HourlyWeather();
+        clone.time = bucket.length;
+        clone.cloud = last.cloud;
+        clone.cloudLow = last.cloudLow;
+        clone.cloudMid = last.cloudMid;
+        clone.cloudHigh = last.cloudHigh;
+        clone.humidity = last.humidity;
+        clone.temp = last.temp;
+        clone.dewPoint = last.dewPoint;
+        clone.windSpeed = last.windSpeed;
+        clone.windDir = last.windDir;
+        clone.precip = last.precip;
+        clone.pressure = last.pressure;
+        bucket.push(clone);
+      }
       const d: DayData = new DayData();
       d.date = dateStr;
       d.hourly = bucket;

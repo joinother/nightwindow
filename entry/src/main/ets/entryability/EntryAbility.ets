@@ -1,11 +1,27 @@
 import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
+import { errorManager } from '@kit.AbilityKit';
 import { ConfigurationConstant } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Logger } from '../common/Logger';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // 记录 JS 崩溃，便于从 hilog 里直接看到原因
+    try {
+      const observer: errorManager.ErrorObserver = {
+        onUnhandledException: (errMsg: string) => {
+          console.error('NIGHTWINDOW JS ERROR: ' + errMsg);
+        },
+        onException: (errObject: Error) => {
+          console.error('NIGHTWINDOW JS EXCEPTION: ' + errObject.message
+            + ' | ' + (errObject.stack ?? ''));
+        }
+      };
+      errorManager.on('error', observer);
+    } catch (e) {
+      console.warn('errorManager hook failed');
+    }
     Logger.info('EntryAbility onCreate');
     try {
       this.context.getApplicationContext()
