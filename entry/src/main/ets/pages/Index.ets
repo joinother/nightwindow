@@ -1333,10 +1333,10 @@ struct Index {
 
           // 压力表风格表盘：黑针今晚、红针昨晚
           Column({ space: 4 }) {
-            ScoreGauge({ score: this.vm.result.total, refScore: this.vm.refScore, gaugeSize: 100 })
+            ScoreGauge({ score: this.vm.result.total, refScore: this.vm.mwScore, gaugeSize: 100 })
             Row({ space: 8 }) {
               this.NeedleTag('#1A1A1A', '今晚')
-              this.NeedleTag('#E0413A', '昨晚 ' + this.vm.refScore.toString())
+              this.NeedleTag('#E0413A', '银河 ' + this.vm.mwScore.toString())
             }
           }
           .margin({ left: 20, bottom: 16 })

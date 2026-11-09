@@ -3,7 +3,7 @@
  * 综合分 = 天气分 × 天空分 ÷ 100
  */
 import { City, DayData, HourlyWeather, TargetPoint, Window, ScoreResult } from '../data/Models';
-import { airmass, altOf, moonEq, moonAlt, angSep, sunAlt } from '../astro/Astro';
+import { airmass, altOf, moonEq, moonAlt, angSep, sunAlt, MoonState } from '../astro/Astro';
 
 /** 深空候选目标 */
 export const DEEP_TARGETS: TargetPoint[] = [
@@ -239,4 +239,72 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
   }
 
   return res;
+}
+
+/**
+ * 银河指数：能不能看见银河，和「观星指数」不是一回事。
+ *
+ * 关键：银河是一整条带子，不能只看银心。
+ * 银心（人马座）是夏天的目标，11 月天一黑就落到西边了；
+ * 但冬天的银河（猎户座—大犬座段）照样横在天上。
+ * 所以取「银道面上几段代表点里的最高点」来判断可见度。
+ */
+const MW_ANCHORS: TargetPoint[] = [
+  new TargetPoint('银心', 17.761, -29.01, 'deep'),   // 人马座，夏季最亮段
+  new TargetPoint('天鹅座', 20.700, 42.00, 'deep'),  // 北十字，夏季银河
+  new TargetPoint('仙后座', 1.000, 60.00, 'deep'),   // 秋季银河
+  new TargetPoint('猎户座', 5.588, -5.39, 'deep')    // 冬季银河
+];
+
+export function milkyWayScore(day: DayData, city: City, ymd: number[]): number {
+  let bestAlt: number = -90;
+  let bestIllum: number = 0;
+  let bestMoonUp: boolean = false;
+
+  for (let i = 0; i < HOURS.length; i++) {
+    const hh: number = HOURS[i];
+    const dd: number = hh < 12 ? ymd[2] + 1 : ymd[2];
+    const jd: number = julianDayLocal(ymd[0], ymd[1], dd, hh - 8);
+
+    if (sunAlt(jd, city.lat, city.lon) > -18) continue;   // 天文暮光未结束
+
+    // 取银道面各代表点的最高高度
+    let alt: number = -90;
+    for (const a of MW_ANCHORS) {
+      const v: number = altOf(a.ra, a.dec, jd, city.lat, city.lon);
+      if (v > alt) alt = v;
+    }
+
+    const mj: MoonState = moonEq(jd);
+    const mAlt: number = altOf(mj.ra / 15, mj.dec, jd, city.lat, city.lon);
+    const moonUp: boolean = mAlt > 0;
+    // 选「净可见度最高」的时刻，而不是单纯最高的时刻
+    const weight: number = alt - (moonUp ? 30 : 4) * mj.f;
+
+    if (weight > bestAlt) {
+      bestAlt = weight;
+      bestIllum = mj.f;
+      bestMoonUp = moonUp;
+    }
+  }
+
+  if (bestAlt < -80) return 0;
+  // weight 里含月亮惩罚，还原成纯高度
+  const altOnly: number = bestAlt + (bestMoonUp ? 30 : 4) * bestIllum;
+  if (altOnly <= 0) return 0;
+
+  // 1. 高度角：15° 以下很勉强，65° 以上满分
+  const altPart: number = Math.max(0, Math.min(1, (altOnly - 10) / 55));
+  // 2. 月光：满月且月亮在天上时砍掉 75%
+  const moonPart: number = 1 - bestIllum * (bestMoonUp ? 0.75 : 0.15);
+  // 3. 光污染：Bortle 5 开始明显，8 以上基本看不到
+  const bortlePart: number = Math.max(0, Math.min(1, (9 - city.bortle) / 6));
+  // 4. 云：取整夜平均云量
+  let cloudSum: number = 0;
+  for (const h of day.hourly) cloudSum += h.cloud;
+  const avgCloud: number = day.hourly.length > 0 ? cloudSum / day.hourly.length : 100;
+  const cloudPart: number = Math.max(0, 1 - avgCloud / 100);
+
+  const v: number = 100 * altPart * moonPart * bortlePart * cloudPart;
+  return Math.round(Math.max(0, Math.min(100, v)));
 }

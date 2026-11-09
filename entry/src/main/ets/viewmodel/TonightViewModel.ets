@@ -1,5 +1,5 @@
 import { City, DayData, HourlyWeather, ScoreResult, TargetPoint, Window } from '../core/data/Models';
-import { scoreFor, windowFor, DEEP_TARGETS } from '../core/score/Score';
+import { scoreFor, windowFor, DEEP_TARGETS, milkyWayScore } from '../core/score/Score';
 import { nearestDarkSite, DarkHint } from '../core/data/DarkSites';
 import { WeatherBundle } from '../core/weather/WeatherTypes';
 
@@ -36,6 +36,7 @@ export class TonightViewModel {
   @Trace darkHint: DarkHint | null = null;
   /** 昨晚评分（表盘红针做对照） */
   @Trace refScore: number = 0;
+  @Trace mwScore: number = 0;   // 银河指数（红针）
 
   /** 天气状态：是否拿到真实预报、来源、更新时间 */
   @Trace weatherOk: boolean = false;
@@ -109,6 +110,8 @@ export class TonightViewModel {
     this.weekRows = this.week();
     this.darkHint = nearestDarkSite(this.city.lat, this.city.lon, this.city.bortle);
     this.refScore = this.scoreAt(this.dayOffset - 1);
+    const mwDay: DayData = this.dayFor(this.dayOffset);
+    this.mwScore = milkyWayScore(mwDay, this.city, this.ymd);
   }
 
   /** 七天概览 */
