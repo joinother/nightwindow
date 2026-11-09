@@ -249,6 +249,29 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
  * 但冬天的银河（猎户座—大犬座段）照样横在天上。
  * 所以取「银道面上几段代表点里的最高点」来判断可见度。
  */
+/**
+ * 银河指数的可调系数。
+ *
+ * 这些数没有权威出处，是按经验定的；用户反馈说「银河明明很好却给低分」时，
+ * 就改这里，不用动算法结构。
+ */
+export class MwTuning {
+  /** 高度角低于此值即判为不可见（度） */
+  static readonly ALT_MIN: number = 10;
+  /** 从 ALT_MIN 起，再升高多少度算满分 */
+  static readonly ALT_SPAN: number = 55;
+  /** 月亮在天上时的满月惩罚（0.75 = 砍掉 75%） */
+  static readonly MOON_UP: number = 0.75;
+  /** 月亮在地平线下时的满月惩罚 */
+  static readonly MOON_DOWN: number = 0.15;
+  /** Bortle 达到此值时银河完全不可见 */
+  static readonly BORTLE_ZERO: number = 9;
+  /** 从 BORTLE_ZERO 往下多少级到满分 */
+  static readonly BORTLE_SPAN: number = 6;
+  /** 云量达到此值时完全不可见（%） */
+  static readonly CLOUD_ZERO: number = 100;
+}
+
 const MW_ANCHORS: TargetPoint[] = [
   new TargetPoint('银心', 17.761, -29.01, 'deep'),   // 人马座，夏季最亮段
   new TargetPoint('天鹅座', 20.700, 42.00, 'deep'),  // 北十字，夏季银河
@@ -293,18 +316,71 @@ export function milkyWayScore(day: DayData, city: City, ymd: number[]): number {
   const altOnly: number = bestAlt + (bestMoonUp ? 30 : 4) * bestIllum;
   if (altOnly <= 0) return 0;
 
-  // 1. 高度角：15° 以下很勉强，65° 以上满分
-  const altPart: number = Math.max(0, Math.min(1, (altOnly - 10) / 55));
-  // 2. 月光：满月且月亮在天上时砍掉 75%
-  const moonPart: number = 1 - bestIllum * (bestMoonUp ? 0.75 : 0.15);
-  // 3. 光污染：Bortle 5 开始明显，8 以上基本看不到
-  const bortlePart: number = Math.max(0, Math.min(1, (9 - city.bortle) / 6));
-  // 4. 云：取整夜平均云量
+  const altPart: number = Math.max(0, Math.min(1,
+    (altOnly - MwTuning.ALT_MIN) / MwTuning.ALT_SPAN));
+  const moonPart: number = 1 - bestIllum * (bestMoonUp ? MwTuning.MOON_UP : MwTuning.MOON_DOWN);
+  const bortlePart: number = Math.max(0, Math.min(1,
+    (MwTuning.BORTLE_ZERO - city.bortle) / MwTuning.BORTLE_SPAN));
   let cloudSum: number = 0;
   for (const h of day.hourly) cloudSum += h.cloud;
   const avgCloud: number = day.hourly.length > 0 ? cloudSum / day.hourly.length : 100;
-  const cloudPart: number = Math.max(0, 1 - avgCloud / 100);
+  const cloudPart: number = Math.max(0, 1 - avgCloud / MwTuning.CLOUD_ZERO);
 
   const v: number = 100 * altPart * moonPart * bortlePart * cloudPart;
   return Math.round(Math.max(0, Math.min(100, v)));
+}
+
+/** 银河指数的四项分解，供数据页解释分数 */
+export class MwParts {
+  alt: number = 0;      // 银河带最高高度角（度）
+  altPart: number = 0;
+  moonPart: number = 0;
+  bortlePart: number = 0;
+  cloudPart: number = 0;
+  moonIllum: number = 0;
+  moonUp: boolean = false;
+  avgCloud: number = 0;
+  total: number = 0;
+}
+
+export function milkyWayParts(day: DayData, city: City, ymd: number[]): MwParts {
+  const out: MwParts = new MwParts();
+  let bestWeight: number = -1e9;
+  let bestAlt: number = -90;
+
+  for (let i = 0; i < HOURS.length; i++) {
+    const hh: number = HOURS[i];
+    const dd: number = hh < 12 ? ymd[2] + 1 : ymd[2];
+    const jd: number = julianDayLocal(ymd[0], ymd[1], dd, hh - 8);
+    if (sunAlt(jd, city.lat, city.lon) > -18) continue;
+
+    let alt: number = -90;
+    for (const a of MW_ANCHORS) {
+      const v: number = altOf(a.ra, a.dec, jd, city.lat, city.lon);
+      if (v > alt) alt = v;
+    }
+    const mj: MoonState = moonEq(jd);
+    const mAlt: number = altOf(mj.ra / 15, mj.dec, jd, city.lat, city.lon);
+    const moonUp: boolean = mAlt > 0;
+    const weight: number = alt - (moonUp ? 30 : 4) * mj.f;
+    if (weight > bestWeight) {
+      bestWeight = weight;
+      bestAlt = alt;
+      out.moonIllum = mj.f;
+      out.moonUp = moonUp;
+    }
+  }
+
+  if (bestWeight < -80) return out;
+  out.alt = bestAlt;
+  out.altPart = Math.max(0, Math.min(1, (bestAlt - MwTuning.ALT_MIN) / MwTuning.ALT_SPAN));
+  out.moonPart = 1 - out.moonIllum * (out.moonUp ? MwTuning.MOON_UP : MwTuning.MOON_DOWN);
+  out.bortlePart = Math.max(0, Math.min(1,
+    (MwTuning.BORTLE_ZERO - city.bortle) / MwTuning.BORTLE_SPAN));
+  let cloudSum: number = 0;
+  for (const h of day.hourly) cloudSum += h.cloud;
+  out.avgCloud = day.hourly.length > 0 ? cloudSum / day.hourly.length : 100;
+  out.cloudPart = Math.max(0, 1 - out.avgCloud / MwTuning.CLOUD_ZERO);
+  out.total = Math.round(100 * out.altPart * out.moonPart * out.bortlePart * out.cloudPart);
+  return out;
 }

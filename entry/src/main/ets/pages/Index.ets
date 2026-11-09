@@ -1714,6 +1714,27 @@ struct Index {
 
       Divider().color('#33FFFFFF')
 
+      // 银河指数
+      Row() {
+        Column() {
+          Text('银河指数 ' + this.vm.mwScore.toString())
+            .fontSize(16)
+            .fontColor('#FFFFFF')
+          Text('高度 ' + Math.round(this.vm.mwParts.alt).toString() + '° ×'
+            + ' 月光 ' + this.vm.mwParts.moonPart.toFixed(2) + ' ×'
+            + ' 光污染 ' + this.vm.mwParts.bortlePart.toFixed(2) + ' ×'
+            + ' 云 ' + this.vm.mwParts.cloudPart.toFixed(2))
+            .fontSize(11)
+            .fontColor('#999999')
+            .margin({ top: 4 })
+        }
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+
+      Divider().color('#33FFFFFF')
+
       // 天空分
       Row() {
         Column() {
