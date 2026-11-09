@@ -1202,6 +1202,21 @@ struct Index {
   }
 
   @Builder
+  NeedleTag(color: string, label: string) {
+    Row({ space: 3 }) {
+      Column()
+        .width(5)
+        .height(5)
+        .borderRadius(3)
+        .backgroundColor(color)
+      Text(label)
+        .fontSize(9)
+        .fontColor('#B3B3B3')
+        .textShadow({ radius: 8, color: '#B3000000' })
+    }
+  }
+
+  @Builder
   Bar() {
     Column()
       .width(16)
@@ -1291,8 +1306,14 @@ struct Index {
             .margin({ left: 8, bottom: 28 })
 
           // 压力表风格表盘：黑针今晚、红针昨晚
-          ScoreGauge({ score: this.vm.result.total, refScore: this.vm.refScore, gaugeSize: 100 })
-            .margin({ left: 20, bottom: 16 })
+          Column({ space: 4 }) {
+            ScoreGauge({ score: this.vm.result.total, refScore: this.vm.refScore, gaugeSize: 100 })
+            Row({ space: 8 }) {
+              this.NeedleTag('#1A1A1A', '今晚')
+              this.NeedleTag('#E0413A', '昨晚 ' + this.vm.refScore.toString())
+            }
+          }
+          .margin({ left: 20, bottom: 16 })
         }
         .alignItems(VerticalAlign.Bottom)
         .margin({ top: 2 })
