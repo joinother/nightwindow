@@ -54,6 +54,7 @@ struct Index {
   private idleTimer: number = -1;
   private camTimer: number = -1;
   @Local refreshing: boolean = false;
+  @Local pullOffset: number = 0;
   @Local refreshHint: string = '';
   private hintTimer: number = -1;
   @Local showMenu: boolean = false;
@@ -1247,11 +1248,14 @@ struct Index {
     }
     .width('100%')
     .height(64 + this.insetTop)
+    // 左右用同样的内边距，否则城市名会被推偏（左侧还要让开刘海）
     .padding({
       left: 20 + this.insetLeft,
-      right: 20 + this.insetRight,
+      right: 20 + this.insetLeft,
       top: this.insetTop
     })
+    // 下拉时标题跟着内容一起下移，避免只有内容在动
+    .translate({ y: this.pullOffset })
   }
 
   @Builder
@@ -1380,6 +1384,7 @@ struct Index {
     .translate({ x: this.pageIndex === 0 ? this.pgShiftX : 0 })
     }
     .onRefreshing(() => { this.pullToRefresh(); })
+    .onOffsetChange((v: number) => { this.pullOffset = px2vp(v); })
     .pullToRefresh(true)
     .refreshOffset(8)
     .gesture(
