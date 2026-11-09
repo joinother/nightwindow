@@ -9,10 +9,12 @@ import { Logger } from '../../common/Logger';
 /**
  * 天气取数：多源降级 + 30 分钟缓存。
  *
- * L0 华为 Weather Kit（能力审批中，未开通时自动跳过）
- * L1 和风天气（境内，KEY 待激活）
- * L2 本地缓存（30 分钟内直接用，超时仍作兜底）
- * L3 无预报（返回 ok=false，界面要明示）
+ * 华为 Weather Kit 已排除：官方文档明确「仅面向系统应用开放，暂不对外开放」，
+ * 第三方应用无法申请，因此境内主源只有和风天气。
+ *
+ * L0 和风天气（境内主源，KEY 待激活）
+ * L1 本地缓存（30 分钟内直接用，超时仍作兜底）
+ * L2 无预报（返回 ok=false，界面要明示）
  */
 export class WeatherRepo {
   private static readonly STORE: string = 'weather_cache';
