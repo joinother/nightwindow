@@ -6,6 +6,7 @@ import { setCloudBias } from '../core/score/Score';
 import { FeedbackUploader } from '../common/FeedbackUploader';
 import { WeatherRepo } from '../core/weather/WeatherRepo';
 import { WeatherBundle } from '../core/weather/WeatherTypes';
+import { GridPoint, IndexGrid } from '../core/map/IndexGrid';
 import { Logger } from '../common/Logger';
 import { ScoreGauge } from '../view/ScoreGauge';
 import { common } from '@kit.AbilityKit';
@@ -31,6 +32,9 @@ struct Index {
   @Local showFeedback: boolean = false;
   @Local shareStats: boolean = true;
   @Local showMap: boolean = false;
+  @Local gridPts: GridPoint[] = [];
+  @Local gridLoading: boolean = false;
+  @Local gridHint: string = '';
   @Local showMenu: boolean = false;
   @Local mapError: string = '';
   @Local markerLat: number = 0;
@@ -308,6 +312,52 @@ struct Index {
     });
   }
 
+  /** 评分 → 颜色（与表盘彩虹同语义：绿好红差） */
+  private scoreColor(v: number, alpha: number): number {
+    let rgb: number = 0x000000;
+    if (v >= 80) rgb = 0x4CAF50;
+    else if (v >= 60) rgb = 0xA8C256;
+    else if (v >= 40) rgb = 0xD9B62B;
+    else if (v >= 20) rgb = 0xE8892B;
+    else rgb = 0xD8432E;
+    return (alpha << 24) | rgb;
+  }
+
+  /** 在地图上画 4×4 指数色块 */
+  private async drawIndexGrid(ctrl: map.MapComponentController): Promise<void> {
+    this.gridLoading = true;
+    this.gridHint = '正在按网格取预报…';
+    try {
+      const ctx: common.Context = getContext(this) as common.Context;
+      const pts: GridPoint[] = await IndexGrid.build(ctx, this.vm.city.lat, this.vm.city.lon,
+        4, 30, this.vm.ymd, this.vm.city.bortle);
+      this.gridPts = pts;
+      let okCount: number = 0;
+      for (const p of pts) {
+        if (!p.ok) continue;
+        okCount++;
+        const opts: mapCommon.MapCircleOptions = {
+          center: { latitude: p.lat, longitude: p.lon },
+          radius: 8000,
+          fillColor: this.scoreColor(p.score, 0x5F),
+          strokeColor: this.scoreColor(p.score, 0xCC),
+          strokeWidth: 1.5,
+          zIndex: 5
+        };
+        try {
+          await ctrl.addCircle(opts);
+        } catch (e) {
+          console.warn('addCircle failed');
+        }
+      }
+      this.gridHint = okCount === 0 ? '网格取数失败' : ('网格 ' + okCount.toString() + ' 点');
+    } catch (e) {
+      this.gridHint = '网格取数失败';
+    } finally {
+      this.gridLoading = false;
+    }
+  }
+
   private openMap(): void {
     this.showSheet = false;
     if (this.darkHint === null) {
@@ -531,7 +581,7 @@ struct Index {
       if (this.showMap) {
         Column() {
           Row() {
-            Text(this.darkHint === null ? this.cityName2 : this.darkHint!.name)
+            Text('观星指数地图 · ' + this.cityName2)
               .fontSize(15)
               .fontColor('#FFFFFF')
             Blank()
@@ -543,9 +593,31 @@ struct Index {
           .width('100%')
           .padding({ left: 24, right: 24, top: 18, bottom: 14 })
 
-          MapComponent({ mapOptions: this.mapOptions, mapCallback: this.mapCallback })
-            .layoutWeight(1)
-            .width('100%')
+          Stack() {
+            MapComponent({ mapOptions: this.mapOptions, mapCallback: this.mapCallback })
+              .width('100%')
+              .height('100%')
+
+            // 图例
+            Column({ space: 6 }) {
+              Text('观星指数').fontSize(10).fontColor('#B3B3B3')
+              this.LegendRow('#4CAF50', '80+  极佳')
+              this.LegendRow('#A8C256', '60–80  好')
+              this.LegendRow('#D9B62B', '40–60  一般')
+              this.LegendRow('#E8892B', '20–40  差')
+              this.LegendRow('#D8432E', '<20  很差')
+              if (this.gridHint.length > 0) {
+                Text(this.gridHint).fontSize(9).fontColor('#8C8C8C').margin({ top: 4 })
+              }
+            }
+            .alignItems(HorizontalAlign.Start)
+            .padding(12)
+            .backgroundColor('#66000000')
+            .borderRadius(12)
+            .position({ left: 20, bottom: 20 })
+          }
+          .layoutWeight(1)
+          .width('100%')
         }
         .width('100%')
         .height('100%')
@@ -578,6 +650,7 @@ struct Index {
       console.warn('setMyLocationEnabled failed');
     }
     this.dropMarker(ctrl);
+    this.drawIndexGrid(ctrl);
   }
 
   /** 落标记，并用官方接口校验本地转换结果 */
@@ -677,6 +750,18 @@ struct Index {
     .width('100%')
     .padding({ left: 28, right: 28, top: 16, bottom: 16 })
     .onClick(action)
+  }
+
+  @Builder
+  LegendRow(color: string, label: string) {
+    Row({ space: 6 }) {
+      Column()
+        .width(10)
+        .height(10)
+        .borderRadius(5)
+        .backgroundColor(color)
+      Text(label).fontSize(10).fontColor('#CCCCCC')
+    }
   }
 
   @Builder

@@ -25,8 +25,11 @@ export class WeatherRepo {
    */
   private static readonly ALLOW_FOREIGN: boolean = false;
 
-  private static key(lat: number, lon: number): string {
-    return (Math.round(lat * 10) / 10).toFixed(1) + ',' + (Math.round(lon * 10) / 10).toFixed(1);
+  private static key(lat: number, lon: number, withAir: boolean = true): string {
+    const base: string = (Math.round(lat * 10) / 10).toFixed(1) + ','
+      + (Math.round(lon * 10) / 10).toFixed(1);
+    // 网格点不带空气质量，单独缓存，避免和首屏互相污染
+    return withAir ? base : (base + ':g');
   }
 
   private static async saveCache(ctx: common.Context, k: string, d: DayData,
@@ -103,8 +106,8 @@ export class WeatherRepo {
 
   /** 主入口：拿今夜的天气，失败返回 ok=false 的 bundle */
   static async load(ctx: common.Context, lat: number, lon: number,
-    forceRefresh: boolean = false): Promise<WeatherBundle> {
-    const k: string = WeatherRepo.key(lat, lon);
+    forceRefresh: boolean = false, withAir: boolean = true): Promise<WeatherBundle> {
+    const k: string = WeatherRepo.key(lat, lon, withAir);
 
     if (!forceRefresh) {
       const cached: WeatherBundle | null = await WeatherRepo.readCache(ctx, k);
@@ -112,7 +115,7 @@ export class WeatherRepo {
     }
 
     // L1 和风
-    const qw: DayData | null = await QWeatherSource.fetch(lat, lon);
+    const qw: DayData | null = await QWeatherSource.fetch(lat, lon, withAir);
     if (qw !== null) {
       await WeatherRepo.saveCache(ctx, k, qw, WeatherSourceKind.QWEATHER);
       const b: WeatherBundle = new WeatherBundle();

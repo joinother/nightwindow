@@ -44,7 +44,7 @@ export class QWeatherSource {
     return Math.max(0.2, Math.min(1, 1 - aqiPenalty - humPenalty));
   }
 
-  static async fetch(lat: number, lon: number): Promise<DayData | null> {
+  static async fetch(lat: number, lon: number, withAir: boolean = true): Promise<DayData | null> {
     const loc: string = lon.toFixed(2) + ',' + lat.toFixed(2);
     const base: string = 'https://' + QWeatherSource.HOST;
     const key: string = QWeatherSource.KEY;
@@ -62,9 +62,10 @@ export class QWeatherSource {
 
     // 空气质量（可选，失败不影响主流程）
     let aqi: number = 50;
-    const air: Record<string, Object> | null =
-      await QWeatherSource.get(base + '/airquality/v1/current/' + lat.toFixed(2) + '/'
-        + lon.toFixed(2) + '?key=' + key);
+    const air: Record<string, Object> | null = withAir
+      ? await QWeatherSource.get(base + '/airquality/v1/current/' + lat.toFixed(2) + '/'
+        + lon.toFixed(2) + '?key=' + key)
+      : null;
     if (air !== null) {
       const idx: Record<string, Object>[] = air['indexes'] as Record<string, Object>[];
       if (idx !== undefined && idx.length > 0) {
