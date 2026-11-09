@@ -55,6 +55,7 @@ struct Index {
   private camTimer: number = -1;
   @Local refreshing: boolean = false;
   @Local pullOffset: number = 0;
+  @Local refreshPrompt: ResourceStr = '下拉刷新';
   @Local refreshHint: string = '';
   private hintTimer: number = -1;
   @Local showMenu: boolean = false;
@@ -176,19 +177,27 @@ struct Index {
     }
     this.refreshing = true;
     this.refreshHint = '';
+    let ok: boolean = false;
     try {
       await this.loadWeather(true);
-      await WeatherRepo.markManualRefresh(ctx);
-      this.showHint('已更新');
+      ok = this.vm.weatherOk;
+      if (ok) await WeatherRepo.markManualRefresh(ctx);
     } catch (e) {
-      this.showHint('更新失败');
-    } finally {
-      this.refreshing = false;
+      const err = e as Error;
+      console.error('NightWindow refresh error: ' + err.message);
+      ok = false;
     }
+    // 官方 promptText：转圈 → 「刷新成功」→ 自动弹回
+    this.refreshPrompt = ok ? '刷新成功' : '刷新失败';
+    setTimeout(() => {
+      this.refreshing = false;
+      this.refreshPrompt = '下拉刷新';
+    }, 1200);
   }
 
   /** 顶部的短提示，2 秒后自动消失 */
   private showHint(text: string): void {
+    console.info('NightWindow hint: ' + text);
     this.refreshHint = text;
     if (this.hintTimer > 0) clearTimeout(this.hintTimer);
     this.hintTimer = setTimeout(() => { this.refreshHint = ''; }, 2000);
@@ -1275,7 +1284,7 @@ struct Index {
 
   @Builder
   PosterPage() {
-    Refresh({ refreshing: $$this.refreshing }) {
+    Refresh({ refreshing: $$this.refreshing, promptText: this.refreshPrompt }) {
     Stack({ alignContent: Alignment.BottomStart }) {
       // 内容
       Column() {
@@ -1406,10 +1415,14 @@ struct Index {
     }
     .onRefreshing(() => { this.pullToRefresh(); })
     .onOffsetChange((v: number) => { this.pullOffset = px2vp(v); })
+    .onStateChange((st: RefreshStatus) => {
+      if (st === RefreshStatus.Drag) this.refreshPrompt = '下拉刷新';
+      else if (st === RefreshStatus.OverDrag) this.refreshPrompt = '松手刷新';
+      else if (st === RefreshStatus.Refresh) this.refreshPrompt = '正在刷新…';
+    })
     .pullToRefresh(true)
-    .refreshOffset(8)
     .gesture(
-      PanGesture({ direction: PanDirection.Vertical, distance: 30 })
+      PanGesture({ direction: PanDirection.Up, distance: 30 })
         .onActionEnd((e: GestureEvent) => {
           if (this.pageIndex !== 0) return;
           if (e.offsetY < -50) {
