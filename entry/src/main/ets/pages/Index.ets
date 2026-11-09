@@ -50,6 +50,16 @@ struct Index {
   @Local pgShiftX: number = 0;
   @Local bgPrev: number = 0;
   @Local bgFade: number = 1;
+  /** 与 bgList 同序的版权归属 */
+  private bgCredit: string[] = [
+    'NASA / ESA / Hubble Heritage (STScI/AURA) · CC BY 4.0',
+    'NASA / ESA / Hubble · CC BY 4.0',
+    'NASA / ESA / Hubble · CC BY 4.0',
+    'NASA / ESA / Hubble · CC BY 4.0',
+    'NASA / ESA / Hubble · CC BY 4.0',
+    'NASA / ESA / Hubble · CC BY 4.0',
+    'NASA / ESA / Hubble · CC BY 4.0'
+  ];
   private bgList: Resource[] = [
     $r('app.media.bg_pillars'),
     $r('app.media.bg_heic0515a'),
@@ -814,6 +824,19 @@ struct Index {
 
       // 信息入口
       Row({ space: 10 }) {
+        Text(this.bgCredit[this.bgIndex])
+          .fontSize(9)
+          .fontColor('#D9D9D9')
+          .textShadow({ radius: 8, color: '#B3000000' })
+          .textAlign(TextAlign.End)
+          .maxLines(2)
+          .constraintSize({ maxWidth: 320 })
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .borderRadius(8)
+          .backgroundColor('#40000000')
+          .position({ right: 24, bottom: 126 })
+          .hitTestBehavior(HitTestMode.None)
+
         Text('i')
           .width(32)
           .height(32)
