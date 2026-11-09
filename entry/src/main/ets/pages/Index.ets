@@ -957,21 +957,21 @@ struct Index {
       .padding({ left: 28, right: 28, bottom: 108 })
       .constraintSize({ maxWidth: 560 })
 
+      // 版权：贴在最右下角（不能在 Row 里，position 会相对 Row 计算）
+      Text(this.bgCredit[this.bgIndex])
+        .fontSize(9)
+        .fontColor('#D9D9D9')
+        .textAlign(TextAlign.End)
+        .maxLines(2)
+        .constraintSize({ maxWidth: 340 })
+        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+        .borderRadius(8)
+        .backgroundColor('#40000000')
+        .position({ right: 14, bottom: 12 })
+        .hitTestBehavior(HitTestMode.None)
+
       // 信息入口
       Row({ space: 10 }) {
-        Text(this.bgCredit[this.bgIndex])
-          .fontSize(9)
-          .fontColor('#D9D9D9')
-          .textShadow({ radius: 8, color: '#B3000000' })
-          .textAlign(TextAlign.End)
-          .maxLines(2)
-          .constraintSize({ maxWidth: 320 })
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-          .borderRadius(8)
-          .backgroundColor('#40000000')
-          .position({ right: 24, bottom: 126 })
-          .hitTestBehavior(HitTestMode.None)
-
         Text('i')
           .width(32)
           .height(32)
