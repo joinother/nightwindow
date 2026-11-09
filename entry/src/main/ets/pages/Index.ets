@@ -8,6 +8,7 @@ import { WeatherRepo } from '../core/weather/WeatherRepo';
 import { WeatherBundle } from '../core/weather/WeatherTypes';
 import { GridPoint, IndexGrid } from '../core/map/IndexGrid';
 import { ApiGridPoint, ApiSource } from '../core/weather/ApiSource';
+import { DayData } from '../core/data/Models';
 import { Logger } from '../common/Logger';
 import { ScoreGauge } from '../view/ScoreGauge';
 import { common } from '@kit.AbilityKit';
@@ -181,6 +182,7 @@ struct Index {
     let ok: boolean = false;
     try {
       await this.loadWeather(true);
+      await this.loadWeek();
       ok = this.vm.weatherOk;
       if (ok) await WeatherRepo.markManualRefresh(ctx);
     } catch (e) {
@@ -205,6 +207,16 @@ struct Index {
   }
 
   /** 拉取今夜天气并重算分数 */
+  /** 7 天数据（服务端缓存 3 小时，成本很低） */
+  private async loadWeek(): Promise<void> {
+    try {
+      const days: DayData[] = await ApiSource.week(this.vm.city.lat, this.vm.city.lon);
+      if (days.length > 0) this.vm.setWeek(days);
+    } catch (e) {
+      console.warn('loadWeek failed');
+    }
+  }
+
   private async loadWeather(force: boolean): Promise<void> {
     try {
       const ctx: common.Context = getContext(this) as common.Context;
@@ -365,6 +377,10 @@ struct Index {
   private applyCity(i: number): void {
     // V2：ViewModel 自己 hold 状态，页面不再赋值
     this.vm.setCity(i);
+    // 换地方就要换这一带的七天预报，否则表里还是上一个地点的数据
+    this.vm.setWeek([]);
+    this.loadWeek();
+    this.loadWeather(false);
   }
 
   /** 相册式交叉淡入：旧图垫底，新图从 0 淡到 1 */
@@ -879,6 +895,7 @@ struct Index {
     this.applyLearnedBias();
     this.flushFeedback();
     this.loadWeather(false);
+    this.loadWeek();
     this.checkFeedback();
     this.loadSharePref();
     this.aboutToAppearClock();

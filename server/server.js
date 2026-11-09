@@ -50,6 +50,9 @@ const WORLD_CITIES = [
 
 const cache = new Map(); // key -> {ts, hours}
 const negCache = new Map(); // key -> ts（失败点短期不再重试）
+const weekCache = new Map(); // key -> {ts, hours}  7 天逐时，TTL 更长
+const WEEK_TTL = 3 * 60 * 60 * 1000;
+const WEEK_MAX = 60;
 const NEG_TTL = 10 * 60 * 1000;
 const ipHits = new Map(); // ip -> {ts, count}
 
@@ -62,8 +65,9 @@ function loadCache() {
     let n = 0;
     for (const k of Object.keys(obj.items)) {
       const v = obj.items[k];
-      if (v && typeof v.ts === 'number' && Array.isArray(v.hours) && now - v.ts < TTL_MS) {
-        cache.set(k, { ts: v.ts, hours: v.hours });
+      const ttl = k.startsWith('w:') ? WEEK_TTL : TTL_MS;
+      if (v && typeof v.ts === 'number' && Array.isArray(v.hours) && now - v.ts < ttl) {
+        (k.startsWith('w:') ? weekCache : cache).set(k, { ts: v.ts, hours: v.hours });
         n++;
       }
     }
@@ -90,6 +94,9 @@ function saveNow() {
     const now = Date.now();
     for (const [k, v] of cache) {
       if (now - v.ts < TTL_MS) items[k] = { ts: v.ts, hours: v.hours };
+    }
+    for (const [k, v] of weekCache) {
+      if (now - v.ts < WEEK_TTL) items[k] = { ts: v.ts, hours: v.hours };
     }
     const tmp = CACHE_FILE + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify({ v: CACHE_VERSION, saved: now, items }), 'utf8');
@@ -179,6 +186,52 @@ async function fetchPoint(lat, lon) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** 7 天逐时（168 小时）：一天更新几次就够，缓存 3 小时 */
+async function fetchWeek(lat, lon) {
+  const key = 'w:' + round05(lat) + ',' + round05(lon);
+  const now = Date.now();
+  const hit = weekCache.get(key);
+  if (hit && now - hit.ts < WEEK_TTL) {
+    weekCache.delete(key);
+    weekCache.set(key, hit);
+    return { hours: hit.hours, ts: hit.ts };
+  }
+  const loc = round05(lon).toFixed(2) + ',' + round05(lat).toFixed(2);
+  const url = 'https://' + QW_HOST + '/v7/weather/168h?location=' + loc + '&key=' + QW_KEY;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 12000);
+  try {
+    const res = await fetch(url, { signal: ac.signal, headers: { 'Accept-Encoding': 'identity' } });
+    if (!res.ok) { log('week http', res.status, loc); return null; }
+    const body = await res.json();
+    if (body.code !== '200' || !Array.isArray(body.hourly)) { log('week code', body.code, loc); return null; }
+    const hours = body.hourly.map(simplify);
+    while (weekCache.size >= WEEK_MAX) {
+      const oldest = weekCache.keys().next().value;
+      if (oldest === undefined) break;
+      weekCache.delete(oldest);
+    }
+    weekCache.set(key, { ts: now, hours });
+    scheduleSave();
+    return { hours, ts: now };
+  } catch (e) {
+    log('week fail', loc, e.message);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function handleWeek(u) {
+  const lat = Number(u.searchParams.get('lat'));
+  const lon = Number(u.searchParams.get('lon'));
+  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 85) throw new Error('bad lat/lon');
+  const got = await fetchWeek(lat, lon);
+  if (!got) return { ok: false, points: [] };
+  const age = Math.max(0, Math.round((Date.now() - got.ts) / 1000));
+  return { ok: true, age, hours: got.hours };
 }
 
 function buildGrid(lat, lon, spanKm, n) {
@@ -281,6 +334,7 @@ const server = http.createServer(async (req, res) => {
     if (u.pathname === '/v1/wx') return send(200, await handleWx(u));
     if (u.pathname === '/v1/grid') return send(200, await handleGrid(u));
     if (u.pathname === '/v1/world') return send(200, await handleWorld());
+    if (u.pathname === '/v1/week') return send(200, await handleWeek(u));
     send(404, { ok: false, error: 'not_found' });
   } catch (e) {
     send(400, { ok: false, error: e.message });

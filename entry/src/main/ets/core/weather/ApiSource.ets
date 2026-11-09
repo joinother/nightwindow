@@ -112,6 +112,75 @@ export class ApiSource {
     return ApiSource.toDay(hours);
   }
 
+  /**
+   * 7 天逐时（168 小时）→ 按「夜」分组。
+   *
+   * 一夜 = 当天 18:00 到次日 06:00，所以 22:00 的小时归当天，
+   * 02:00 的小时归前一天。
+   */
+  static async week(lat: number, lon: number): Promise<DayData[]> {
+    const j: Record<string, Object> | null =
+      await ApiSource.get('/v1/week?lat=' + lat.toFixed(3) + '&lon=' + lon.toFixed(3));
+    const out: DayData[] = [];
+    if (j === null || j['ok'] !== true) return out;
+    const hours: Record<string, Object>[] = j['hours'] as Record<string, Object>[];
+    if (hours === undefined || hours === null) return out;
+
+    const byDate: Map<string, HourlyWeather[]> = new Map();
+    for (const o of hours) {
+      const t: string = o['t'] as string;
+      if (t.length < 13) continue;
+      const hh: number = Number(t.substring(11, 13));
+      if (hh > 6 && hh < 18) continue;          // 白天不属于任何一个观测夜
+      let dateStr: string = t.substring(0, 10);
+      if (hh <= 6) {
+        // 凌晨归到前一天
+        const d: Date = new Date(dateStr + 'T00:00:00');
+        d.setDate(d.getDate() - 1);
+        dateStr = d.getFullYear().toString() + '-'
+          + (d.getMonth() + 1).toString().padStart(2, '0') + '-'
+          + d.getDate().toString().padStart(2, '0');
+      }
+      let bucket: HourlyWeather[] | undefined = byDate.get(dateStr);
+      if (bucket === undefined) {
+        bucket = [];
+        byDate.set(dateStr, bucket);
+      }
+      const w: HourlyWeather = new HourlyWeather();
+      w.time = bucket.length;
+      w.cloud = Number(o['c']);
+      w.cloudLow = w.cloud;
+      w.cloudMid = 0;
+      w.cloudHigh = 0;
+      w.humidity = Number(o['h']);
+      w.temp = Number(o['tp']);
+      w.dewPoint = Number(o['dw']);
+      w.windSpeed = Number(o['ws']);
+      w.windDir = Number(o['wd']);
+      w.precip = Number(o['p']);
+      w.pressure = Number(o['pr']);
+      bucket.push(w);
+    }
+
+    for (const dateStr of byDate.keys()) {
+      const bucket: HourlyWeather[] = byDate.get(dateStr) as HourlyWeather[];
+      if (bucket.length < 3) continue;
+      const d: DayData = new DayData();
+      d.date = dateStr;
+      d.hourly = bucket;
+      let humSum: number = 0;
+      let windSum: number = 0;
+      for (const h of bucket) { humSum += h.humidity; windSum += h.windSpeed; }
+      const n: number = bucket.length;
+      d.transp = Math.max(0.35, Math.min(1, 1 - Math.max(0, (humSum / n - 70) / 30) * 0.45));
+      d.seeing = Math.max(0.8, Math.min(4, 1.2 + (windSum / n) / 12));
+      d.aod = 0.15;
+      out.push(d);
+    }
+    out.sort((a: DayData, b: DayData) => a.date < b.date ? -1 : 1);
+    return out;
+  }
+
   /** 世界视图：按城市点取数（海面太密会全是 400） */
   static async world(): Promise<ApiGridPoint[]> {
     const j: Record<string, Object> | null = await ApiSource.get('/v1/world');

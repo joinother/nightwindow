@@ -47,10 +47,36 @@ export class TonightViewModel {
 
   /** 今夜真实天气（拿到后覆盖演示数据） */
   private dayNow: DayData | null = null;
+  private weekData: DayData[] = [];
+  @Trace weekLoaded: boolean = false;
 
   /** 某天的天气：今夜用真实数据，其余暂时用演示数据 */
+  /** 灌入 7 天真实数据 */
+  setWeek(days: DayData[]): void {
+    this.weekData = days;
+    this.weekLoaded = days.length > 0;
+    this.refresh();
+  }
+
+  /** 找某一天的真实数据，没有就退回示例 */
+  private realDay(dateStr: string): DayData | null {
+    for (const d of this.weekData) {
+      if (d.date === dateStr) return d;
+    }
+    return null;
+  }
+
   private dayFor(offset: number): DayData {
     if (offset === 0 && this.dayNow !== null) return this.dayNow;
+    if (this.weekData.length > 0) {
+      const dt: Date = new Date(TonightViewModel.BASE[0], TonightViewModel.BASE[1] - 1,
+        TonightViewModel.BASE[2] + this.dayOffset + offset);
+      const ymd: string = dt.getFullYear().toString() + '-'
+        + (dt.getMonth() + 1).toString().padStart(2, '0') + '-'
+        + dt.getDate().toString().padStart(2, '0');
+      const hit: DayData | null = this.realDay(ymd);
+      if (hit !== null) return hit;
+    }
     const base: number[] = [8, 14, 22, 30, 38, 26, 12];
     const i: number = Math.max(0, Math.min(6, offset));
     return this.demoDayOffset(base[i]);
@@ -148,7 +174,7 @@ export class TonightViewModel {
     const wdName: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const base: number[] = [8, 14, 22, 30, 38, 26, 12];
     for (let i = 0; i < 7; i++) {
-      const d: DayData = this.demoDayOffset(base[i]);
+      const d: DayData = this.dayFor(i);
       const dt: Date = new Date(TonightViewModel.BASE[0], TonightViewModel.BASE[1] - 1,
         TonightViewModel.BASE[2] + this.dayOffset + i);
       const ymd: number[] = [dt.getFullYear(), dt.getMonth() + 1, dt.getDate()];
