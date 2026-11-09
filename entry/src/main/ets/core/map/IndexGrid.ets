@@ -3,6 +3,7 @@ import { City, DayData, ScoreResult, Window } from '../data/Models';
 import { DEEP_TARGETS, scoreFor, windowFor } from '../score/Score';
 import { WeatherRepo } from '../weather/WeatherRepo';
 import { CITIES } from '../../viewmodel/TonightViewModel';
+import { ChinaCity, CHINA_CITIES } from './ChinaCities';
 
 /** 网格上的一个点 */
 @ObservedV2
@@ -14,6 +15,7 @@ export class GridPoint {
   @Trace ok: boolean = false;
   @Trace cloud: number = 0;
   @Trace wind: number = 0;
+  @Trace name: string = '';
 }
 
 const RAD: number = Math.PI / 180.0;
@@ -33,6 +35,38 @@ function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): num
  * 等 VIIRS 栅格接入后替换（文档 §6.9 / B11）。
  */
 export class IndexGrid {
+  /** 全国：按城市点逐个算分（不插值，跨 500km 插值是假精度） */
+  static async buildNational(ctx: common.Context, ymd: number[]): Promise<GridPoint[]> {
+    const pts: GridPoint[] = [];
+    for (const c of CHINA_CITIES) {
+      const p: GridPoint = new GridPoint();
+      p.lat = c.lat;
+      p.lon = c.lon;
+      p.bortle = c.bortle;
+      p.name = c.name;
+      pts.push(p);
+    }
+    const CHUNK: number = 6;
+    for (let s = 0; s < pts.length; s += CHUNK) {
+      const slice: GridPoint[] = pts.slice(s, s + CHUNK);
+      const jobs: Promise<void>[] = slice.map((p: GridPoint) => {
+        return WeatherRepo.load(ctx, p.lat, p.lon, false, false).then((b) => {
+          if (!b.ok) {
+            p.ok = false;
+            return;
+          }
+          const r: ScoreResult = IndexGrid.scoreAt(b.day, p.lat, p.lon, p.bortle, ymd);
+          p.score = r.total;
+          p.cloud = r.cloud;
+          p.wind = r.wind;
+          p.ok = true;
+        });
+      });
+      await Promise.all(jobs);
+    }
+    return pts;
+  }
+
   /** 把采样网格双线性插值成更密的网格，用于连续渲染 */
   static interpolate(samples: GridPoint[], n: number, outN: number): GridPoint[] {
     const out: GridPoint[] = [];

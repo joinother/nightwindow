@@ -35,6 +35,9 @@ struct Index {
   @Local gridPts: GridPoint[] = [];
   @Local gridLoading: boolean = false;
   @Local gridHint: string = '';
+  @Local mapScope: number = 0;      // 0=本地 1=全国
+  private userLat: number = 0;      // 真实定位坐标，0 表示未知
+  private userLon: number = 0;
   @Local refreshing: boolean = false;
   @Local refreshHint: string = '';
   private hintTimer: number = -1;
@@ -311,6 +314,8 @@ struct Index {
 
   /** 按坐标吸附到最近城市，并记录精度 */
   private snapToNearest(lat: number, lon: number, accuracy: number): void {
+    this.userLat = lat;
+    this.userLon = lon;
     let best: number = 0;
     let bestKm: number = 1e9;
     for (let i = 0; i < CITIES.length; i++) {
@@ -375,12 +380,47 @@ struct Index {
     return (alpha << 24) | rgb;
   }
 
+  /** 有精确定位就用它，否则退回所选城市 */
+  private myLat(): number {
+    return this.userLat !== 0 ? this.userLat : this.vm.city.lat;
+  }
+
+  private myLon(): number {
+    return this.userLon !== 0 ? this.userLon : this.vm.city.lon;
+  }
+
+  private centerOnMe(ctrl: map.MapComponentController): void {
+    try {
+      ctrl.animateCamera(map.newLatLng({ latitude: this.myLat(), longitude: this.myLon() },
+        this.mapScope === 0 ? 9 : 3.6), 0);
+    } catch (e) {
+      console.warn('center camera failed');
+    }
+  }
+
+  /** 「你在这里」标记 */
+  private dropHomeMarker(ctrl: map.MapComponentController): void {
+    const opts: mapCommon.MarkerOptions = {
+      position: { latitude: this.myLat(), longitude: this.myLon() },
+      title: this.userLat !== 0 ? '我的位置' : (this.cityName2 + '（城市中心）'),
+      clickable: false
+    };
+    ctrl.addMarker(opts).catch(() => {});
+  }
+
   /** 在地图上画 4×4 指数色块 */
   private async drawIndexGrid(ctrl: map.MapComponentController): Promise<void> {
     this.gridLoading = true;
-    this.gridHint = '正在按网格取预报…';
+    this.gridHint = this.mapScope === 0 ? '正在按网格取预报…' : '正在取全国预报…';
     try {
+      await ctrl.clear();
+      this.dropHomeMarker(ctrl);
       const ctx: common.Context = getContext(this) as common.Context;
+      if (this.mapScope === 1) {
+        await this.drawNational(ctrl, ctx);
+        this.gridLoading = false;
+        return;
+      }
       const pts: GridPoint[] = await IndexGrid.build(ctx, this.vm.city.lat, this.vm.city.lon,
         4, 30, this.vm.ymd, this.vm.city.bortle);
       this.gridPts = pts;
@@ -394,7 +434,7 @@ struct Index {
         for (let i = 0; i < dense.length; i += 24) {
           const batch: GridPoint[] = dense.slice(i, i + 24);
           const jobs: Promise<void>[] = batch.map((g: GridPoint) => {
-            const half: number = 0.52;
+            const half: number = 0.57;
             const dLat: number = cellLat * half;
             const dLon: number = cellLon * half;
             // 边缘淡出：中心不透明、四周渐隐，避免出现生硬的方块边界
@@ -436,6 +476,42 @@ struct Index {
     } finally {
       this.gridLoading = false;
     }
+  }
+
+  /** 全国视图：按城市点着色，圆点标注省会/港澳台/暗夜地 */
+  private async drawNational(ctrl: map.MapComponentController, ctx: common.Context): Promise<void> {
+    const pts: GridPoint[] = await IndexGrid.buildNational(ctx, this.vm.ymd);
+    this.gridPts = pts;
+    let ok: number = 0;
+    for (let i = 0; i < pts.length; i += 12) {
+      const batch: GridPoint[] = pts.slice(i, i + 12);
+      const jobs: Promise<void>[] = batch.map((g: GridPoint) => {
+        if (!g.ok) return Promise.resolve();
+        ok++;
+        const opts: mapCommon.MapCircleOptions = {
+          center: { latitude: g.lat, longitude: g.lon },
+          radius: 45000,
+          fillColor: (0xCC << 24) | this.scoreRgb(g.score),
+          strokeWidth: 0,
+          zIndex: 5
+        };
+        return ctrl.addCircle(opts).then(() => {}).catch(() => {});
+      });
+      await Promise.all(jobs);
+    }
+    this.gridHint = '全国 ' + ok.toString() + ' 城';
+    try {
+      ctrl.animateCamera(map.newLatLng({ latitude: 34.5, longitude: 106.0 }, 3.4), 400);
+    } catch (e) {
+      console.warn('national camera failed');
+    }
+  }
+
+  /** 切换本地 / 全国 */
+  private switchScope(v: number): void {
+    if (this.mapScope === v || this.mapCtl === null) return;
+    this.mapScope = v;
+    this.drawIndexGrid(this.mapCtl);
   }
 
   private openMap(): void {
@@ -690,6 +766,31 @@ struct Index {
             .position({ left: 20, top: 20 + this.insetTop })
             .hitTestBehavior(HitTestMode.None)
 
+          // 顶部中间：本地 / 全国
+          Row({ space: 0 }) {
+            Text('本地')
+              .fontSize(12)
+              .fontColor(this.mapScope === 0 ? '#0A0A0A' : '#FFFFFF')
+              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+              .backgroundColor(this.mapScope === 0 ? '#FFFFFF' : Color.Transparent)
+              .borderRadius(16)
+              .onClick(() => { this.switchScope(0); })
+            Text('全国')
+              .fontSize(12)
+              .fontColor(this.mapScope === 1 ? '#0A0A0A' : '#FFFFFF')
+              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+              .backgroundColor(this.mapScope === 1 ? '#FFFFFF' : Color.Transparent)
+              .borderRadius(16)
+              .onClick(() => { this.switchScope(1); })
+          }
+          .padding(3)
+          .borderRadius(19)
+          .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+          .borderWidth(0.5)
+          .borderColor('#33FFFFFF')
+          .position({ left: '50%', top: 20 + this.insetTop })
+          .translate({ x: -62 })
+
           // 右上：圆形关闭按钮，和地图自带控件同一种材质
           Stack({ alignContent: Alignment.Center }) {
             Column()
@@ -771,14 +872,8 @@ struct Index {
     } catch (e) {
       console.warn('setMyLocationEnabled failed');
     }
-    // 先摆好镜头，避免加载期间停在西岭雪山
-    try {
-      ctrl.animateCamera(map.newLatLng(
-        { latitude: this.vm.city.lat, longitude: this.vm.city.lon }, 9), 0);
-    } catch (e) {
-      console.warn('initial camera failed');
-    }
-    this.dropMarker(ctrl);
+    this.centerOnMe(ctrl);
+    this.dropHomeMarker(ctrl);
     this.drawIndexGrid(ctrl);
   }
 
