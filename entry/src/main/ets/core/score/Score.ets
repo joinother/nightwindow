@@ -179,15 +179,23 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
   const windAvg: number = windSum / seg.length;
   const windS: number = clamp(100 * (1 - Math.pow(windAvg / 45, 1.6)), 0, 100);
 
-  // 降水一票否决
-  let wet: boolean = false;
+  // 降水：中雨以上一票否决，零星小雨只打折
+  //
+  // 原来只要某小时 >0.1mm 就归零，结果成都 11/15 夜里两小时飘了 0.8mm，
+  // 整夜从 8 分直接变 0 分——比 98% 云量的 11/14 还差，这不合理。
+  let maxPrecip: number = 0;
+  let sumPrecip: number = 0;
   for (const h of seg) {
-    if (h.precip > 0.1) wet = true;
+    if (h.precip > maxPrecip) maxPrecip = h.precip;
+    sumPrecip += h.precip;
   }
+  const heavyRain: boolean = maxPrecip >= 1.0 || sumPrecip >= 3.0;
+  const drizzle: boolean = !heavyRain && sumPrecip > 0.1;
+  const wet: boolean = heavyRain;
 
   const weatherRaw: number = 0.50 * cloudS + 0.18 * transpS + 0.13 * seeingS
     + 0.09 * dewS + 0.10 * windS;
-  const weather: number = wet ? 0 : weatherRaw * airF;
+  const weather: number = heavyRain ? 0 : weatherRaw * airF * (drizzle ? 0.7 : 1);
 
   // 天空分：Bortle × 月光压制
   const ms = moonEq(jd);

@@ -93,7 +93,7 @@ export class ScoreResult {
   @Trace seeing: number = 0;
   @Trace dew: number = 0;
   @Trace wind: number = 0;      // 风速分 0-100
-  @Trace wet: boolean = false;  // 窗口内是否有降水
+  @Trace wet: boolean = false;  // 窗口内是否有中雨以上降水
   @Trace alt: number = 0;
   @Trace targetName: string = '';
   @Trace window: Window | null = null;

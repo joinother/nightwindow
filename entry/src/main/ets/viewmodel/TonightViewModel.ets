@@ -12,6 +12,7 @@ export class DayScore {
   @Trace grade: string = '';
   @Trace windowText: string = '';
   @Trace targetName: string = '';
+  @Trace wet: boolean = false;   // 当晚有中雨以上降水
 }
 
 export const CITIES: City[] = [
@@ -189,7 +190,9 @@ export class TonightViewModel {
       row.weekday = wdName[dt.getDay()];
       row.total = best === null ? 0 : best.total;
       row.grade = best === null ? '—' : best.grade;
-      row.windowText = (best === null || best.window === null) ? '无窗口' : best.window.text;
+      row.wet = best !== null && best.wet;
+      row.windowText = (best === null || best.window === null)
+        ? (row.wet ? '有雨' : '无窗口') : best.window.text;
       row.targetName = best === null ? '' : best.targetName;
       out.push(row);
     }
