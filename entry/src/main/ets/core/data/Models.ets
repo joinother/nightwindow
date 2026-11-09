@@ -24,7 +24,10 @@ export class City {
 @ObservedV2
 export class HourlyWeather {
   @Trace time: number = 0;        // epoch ms
-  @Trace cloud: number = 0;       // 0-100
+  @Trace cloud: number = 0;       // 0-100 总云量
+  @Trace cloudLow: number = 0;    // 0-100 低云
+  @Trace cloudMid: number = 0;    // 0-100 中云
+  @Trace cloudHigh: number = 0;   // 0-100 高云
   @Trace visibility: number = 20; // km
   @Trace humidity: number = 60;   // 0-100
   @Trace pressure: number = 1013; // hPa

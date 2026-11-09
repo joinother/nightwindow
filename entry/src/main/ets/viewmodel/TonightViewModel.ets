@@ -178,9 +178,15 @@ export class TonightViewModel {
     d.aod = 0.15;
 
     const clouds: number[] = [8, 6, 10, 14, 18, 24, 30, 36, 40, 44, 42, 38, 34];
+    // 演示用的分层构成：低云为主，少量中云，入夜后高云增多
+    const lowRatio: number[] = [0.7, 0.7, 0.65, 0.6, 0.6, 0.55, 0.5, 0.45, 0.45, 0.4, 0.4, 0.45, 0.5];
+    const midRatio: number[] = [0.2, 0.2, 0.2, 0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.35, 0.35, 0.3, 0.3];
     for (let i = 0; i < clouds.length; i++) {
       const h: HourlyWeather = new HourlyWeather();
       h.cloud = clouds[i];
+      h.cloudLow = Math.round(clouds[i] * lowRatio[i]);
+      h.cloudMid = Math.round(clouds[i] * midRatio[i]);
+      h.cloudHigh = Math.max(0, clouds[i] - h.cloudLow - h.cloudMid);
       h.visibility = 22;
       h.humidity = 62;
       h.pressure = 1012;

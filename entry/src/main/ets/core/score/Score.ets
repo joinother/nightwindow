@@ -102,12 +102,28 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
 
   const seg: HourlyWeather[] = win === null ? day.hourly : day.hourly.slice(win.start, win.end + 1);
 
-  // 云量：均值 + 稳定度惩罚
+  // 云量：分层加权后的有效遮蔽（高云只算约 1/3，参考天文通实测权重）
+  const effCloud = (h: HourlyWeather): number => {
+    const low: number = Math.min(100, 0.94 * h.cloudLow);
+    const mid: number = Math.min(100, 0.94 * h.cloudMid);
+    const high: number = Math.min(100, 0.32 * h.cloudHigh);
+    // 遮蔽叠加，任何一层接近满铺都会压死
+    return 100 * (1 - (1 - low / 100) * (1 - mid / 100) * (1 - high / 100));
+  };
+
   let sum: number = 0;
-  for (const h of seg) sum += h.cloud;
+  for (const h of seg) {
+    // 没有分层数据时退回总云量
+    const layered: boolean = h.cloudLow + h.cloudMid + h.cloudHigh > 0;
+    sum += layered ? effCloud(h) : h.cloud;
+  }
   const cMean: number = sum / seg.length;
   let varSum: number = 0;
-  for (const h of seg) varSum += (h.cloud - cMean) * (h.cloud - cMean);
+  for (const h of seg) {
+    const layered: boolean = h.cloudLow + h.cloudMid + h.cloudHigh > 0;
+    const v: number = layered ? effCloud(h) : h.cloud;
+    varSum += (v - cMean) * (v - cMean);
+  }
   const cSd: number = Math.sqrt(varSum / seg.length);
   const stability: number = 1 - 0.30 * Math.min(1, cSd / 25);
   const cloudS: number = 100 * Math.pow(1 - cMean / 100, 1.35) * stability;
