@@ -168,8 +168,21 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
   const X: number = airmass(alt);
   const airF: number = alt < 5 ? 0.20 : Math.max(0.45, Math.pow(2.512, -0.12 * (X - 1)));
 
-  const weatherRaw: number = 0.55 * cloudS + 0.20 * transpS + 0.15 * seeingS + 0.10 * dewS;
-  const weather: number = weatherRaw * airF;
+  // 风：>8 m/s 开始抖，>12 m/s 深空基本废（km/h 换算：≥29 / ≥43）
+  let windSum: number = 0;
+  for (const h of seg) windSum += h.windSpeed;
+  const windAvg: number = windSum / seg.length;
+  const windS: number = clamp(100 * (1 - Math.pow(windAvg / 45, 1.6)), 0, 100);
+
+  // 降水一票否决
+  let wet: boolean = false;
+  for (const h of seg) {
+    if (h.precip > 0.1) wet = true;
+  }
+
+  const weatherRaw: number = 0.50 * cloudS + 0.18 * transpS + 0.13 * seeingS
+    + 0.09 * dewS + 0.10 * windS;
+  const weather: number = wet ? 0 : weatherRaw * airF;
 
   // 天空分：Bortle × 月光压制
   const ms = moonEq(jd);
@@ -196,6 +209,8 @@ export function scoreFor(day: DayData, city: City, target: TargetPoint, win: Win
   res.weather = Math.round(weather);
   res.sky = Math.round(sky);
   res.cloud = Math.round(cloudS);
+  res.wind = Math.round(windS);
+  res.wet = wet;
   res.cloudPct = Math.round(cMean);
   res.transp = Math.round(transpS);
   res.seeing = Math.round(seeingS);

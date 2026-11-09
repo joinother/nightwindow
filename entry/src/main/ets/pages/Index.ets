@@ -4,6 +4,8 @@ import { nearestDarkSite, DarkHint } from '../core/data/DarkSites';
 import { FeedbackStore } from '../common/FeedbackStore';
 import { setCloudBias } from '../core/score/Score';
 import { FeedbackUploader } from '../common/FeedbackUploader';
+import { WeatherRepo } from '../core/weather/WeatherRepo';
+import { WeatherBundle } from '../core/weather/WeatherTypes';
 import { Logger } from '../common/Logger';
 import { ScoreGauge } from '../view/ScoreGauge';
 import { common } from '@kit.AbilityKit';
@@ -124,6 +126,18 @@ struct Index {
     }
   }
 
+  /** 拉取今夜天气并重算分数 */
+  private async loadWeather(force: boolean): Promise<void> {
+    try {
+      const ctx: common.Context = getContext(this) as common.Context;
+      const b: WeatherBundle = await WeatherRepo.load(ctx, this.vm.city.lat, this.vm.city.lon, force);
+      this.vm.applyWeather(b);
+      Logger.info('weather: ok=' + b.ok + ' source=' + b.source + ' stale=' + b.stale);
+    } catch (e) {
+      console.warn('loadWeather failed');
+    }
+  }
+
   /** 攒批上报：联网且用户允许时把本地反馈队列发出去 */
   private async flushFeedback(): Promise<void> {
     try {
@@ -166,6 +180,15 @@ struct Index {
     } catch (e) {
       console.warn('toggleShare failed');
     }
+  }
+
+  /** 天气更新时间 → HH:mm */
+  private updatedClock(): string {
+    if (this.vm.weatherUpdated <= 0) return '—';
+    const d: Date = new Date(this.vm.weatherUpdated);
+    const h: number = d.getHours();
+    const m: number = d.getMinutes();
+    return (h < 10 ? '0' : '') + h.toString() + ':' + (m < 10 ? '0' : '') + m.toString();
   }
 
   private dateKey(d: Date): string {
@@ -393,6 +416,7 @@ struct Index {
     this.bindTilt();
     this.applyLearnedBias();
     this.flushFeedback();
+    this.loadWeather(false);
     this.checkFeedback();
     this.loadSharePref();
     this.aboutToAppearClock();
@@ -918,6 +942,7 @@ struct Index {
         .padding({ top: 12, bottom: 12 })
         .onClick(() => {
           this.vm.setCity(i);
+      this.loadWeather(false);
           this.showCity = false;
         })
       }, (c: City) => c.name)
@@ -1041,9 +1066,38 @@ struct Index {
             .fontSize(16)
             .fontColor('#FFFFFF')
           Text('云 ' + this.result.cloud.toString() + ' · 通透 ' + this.result.transp.toString()
-            + ' · 视宁 ' + this.result.seeing.toString() + ' · 露点 ' + this.result.dew.toString())
+            + ' · 视宁 ' + this.result.seeing.toString() + ' · 露点 ' + this.result.dew.toString()
+            + ' · 风 ' + this.result.wind.toString())
             .fontSize(11)
             .fontColor('#999999')
+            .margin({ top: 4 })
+        }
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+
+      if (this.result.wet) {
+        Text('今夜窗口内有降水，分数已置零')
+          .fontSize(12)
+          .fontColor('#FF6B6B')
+          .width('100%')
+          .padding({ top: 10, bottom: 10 })
+        Divider().color('#33FFFFFF')
+      }
+
+      // 数据来源（B12）
+      Row() {
+        Column() {
+          Text('数据来源')
+            .fontSize(13)
+            .fontColor('#CCCCCC')
+          Text(this.vm.weatherOk
+            ? (this.vm.weatherSource + (this.vm.weatherStale ? ' · 缓存' : '')
+              + ' · ' + this.updatedClock())
+            : '无预报 · 使用示例数据')
+            .fontSize(11)
+            .fontColor(this.vm.weatherOk ? '#999999' : '#CC8A3A')
             .margin({ top: 4 })
         }
         .alignItems(HorizontalAlign.Start)

@@ -33,6 +33,8 @@ export class HourlyWeather {
   @Trace humidity: number = 60;   // 0-100
   @Trace pressure: number = 1013; // hPa
   @Trace windSpeed: number = 5;   // km/h
+  @Trace windDir: number = 0;     // 度，风的来向
+  @Trace precip: number = 0;      // mm/h，降水
   @Trace temp: number = 15;       // °C
 }
 
@@ -89,6 +91,8 @@ export class ScoreResult {
   @Trace transp: number = 0;
   @Trace seeing: number = 0;
   @Trace dew: number = 0;
+  @Trace wind: number = 0;      // 风速分 0-100
+  @Trace wet: boolean = false;  // 窗口内是否有降水
   @Trace alt: number = 0;
   @Trace targetName: string = '';
   @Trace window: Window | null = null;

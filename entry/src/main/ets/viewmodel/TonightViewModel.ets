@@ -1,6 +1,7 @@
 import { City, DayData, HourlyWeather, ScoreResult, TargetPoint, Window } from '../core/data/Models';
 import { scoreFor, windowFor, DEEP_TARGETS } from '../core/score/Score';
 import { nearestDarkSite, DarkHint } from '../core/data/DarkSites';
+import { WeatherBundle } from '../core/weather/WeatherTypes';
 
 /** 一天的概览（七天页用） */
 @ObservedV2
@@ -35,6 +36,33 @@ export class TonightViewModel {
   @Trace darkHint: DarkHint | null = null;
   /** 昨晚评分（表盘红针做对照） */
   @Trace refScore: number = 0;
+
+  /** 天气状态：是否拿到真实预报、来源、更新时间 */
+  @Trace weatherOk: boolean = false;
+  @Trace weatherSource: string = '无预报';
+  @Trace weatherUpdated: number = 0;
+  @Trace weatherStale: boolean = false;
+
+  /** 今夜真实天气（拿到后覆盖演示数据） */
+  private dayNow: DayData | null = null;
+
+  /** 某天的天气：今夜用真实数据，其余暂时用演示数据 */
+  private dayFor(offset: number): DayData {
+    if (offset === 0 && this.dayNow !== null) return this.dayNow;
+    const base: number[] = [8, 14, 22, 30, 38, 26, 12];
+    const i: number = Math.max(0, Math.min(6, offset));
+    return this.demoDayOffset(base[i]);
+  }
+
+  /** 由外部注入取到的天气，然后重算 */
+  applyWeather(b: WeatherBundle): void {
+    this.weatherOk = b.ok;
+    this.weatherSource = b.source;
+    this.weatherUpdated = b.updatedAt;
+    this.weatherStale = b.stale;
+    this.dayNow = b.ok ? b.day : null;
+    this.refresh();
+  }
 
   /** 相对基准夜（2026-11-07）的偏移，右滑 +1、左滑 -1 */
   @Trace dayOffset: number = 0;
@@ -148,7 +176,7 @@ export class TonightViewModel {
     const dt: Date = new Date(TonightViewModel.BASE[0], TonightViewModel.BASE[1] - 1,
       TonightViewModel.BASE[2] + offset);
     const ymd: number[] = [dt.getFullYear(), dt.getMonth() + 1, dt.getDate()];
-    const day: DayData = this.demoDay();
+    const day: DayData = this.dayFor(offset);
     let best: number = 0;
     for (const t of DEEP_TARGETS) {
       const w: Window | null = windowFor(day, this.city, t, ymd);
@@ -159,7 +187,7 @@ export class TonightViewModel {
   }
 
   resolve(): ScoreResult {
-    const day: DayData = this.demoDay();
+    const day: DayData = this.dayFor(0);
     let best: ScoreResult | null = null;
 
     for (const t of DEEP_TARGETS) {
