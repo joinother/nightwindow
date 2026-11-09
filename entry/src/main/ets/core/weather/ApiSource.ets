@@ -15,8 +15,24 @@ export class ApiGridPoint {
  * 值和风 Key 都只在服务端，客户端拿不到；
  * 网格一次请求拿回整片数据，不再逐点打上游。
  */
+/** 网格缓存条目 */
+class GridEntry {
+  ts: number = 0;
+  points: ApiGridPoint[] = [];
+}
+
 export class ApiSource {
   static readonly BASE: string = 'https://skyinstrument.cn/nw';
+
+  /**
+   * 客户端网格缓存。
+   *
+   * 一次 49 点网格约 109KB，而地图来回缩放/平移会反复请求同一片区域。
+   * 服务端虽然也有缓存（不打和风），但下载量一点没省——这一层专门省下载。
+   */
+  private static gridCache: Map<string, GridEntry> = new Map();
+  private static readonly GRID_TTL: number = 10 * 60 * 1000;   // 10 分钟
+  private static readonly GRID_MAX: number = 30;               // 最多留 30 片区域
 
   private static get(path: string): Promise<Record<string, Object> | null> {
     const req: http.HttpRequest = http.createHttp();
@@ -110,8 +126,25 @@ export class ApiSource {
     return out;
   }
 
-  /** 一次取回整片网格 */
+  /** 网格缓存的键：坐标留 2 位（约 1km）、跨度按 10km 归档，缩放几档内算同一片 */
+  private static gridKey(lat: number, lon: number, spanKm: number, n: number): string {
+    return lat.toFixed(2) + ',' + lon.toFixed(2) + ','
+      + Math.round(spanKm / 10).toString() + ',' + n.toString();
+  }
+
+  /** 一次取回整片网格（带 10 分钟本地缓存） */
   static async grid(lat: number, lon: number, spanKm: number, n: number): Promise<ApiGridPoint[]> {
+    const key: string = ApiSource.gridKey(lat, lon, spanKm, n);
+    const hit: GridEntry | undefined = ApiSource.gridCache.get(key);
+    if (hit !== undefined && Date.now() - hit.ts < ApiSource.GRID_TTL) {
+      console.info('NightWindow gridCache hit ' + key + ' n=' + hit.points.length.toString());
+      // 命中就刷新顺序，近似 LRU
+      ApiSource.gridCache.delete(key);
+      ApiSource.gridCache.set(key, hit);
+      return hit.points;
+    }
+    console.info('NightWindow gridCache miss ' + key);
+
     const path: string = '/v1/grid?lat=' + lat.toFixed(3) + '&lon=' + lon.toFixed(3)
       + '&span=' + Math.round(spanKm).toString() + '&n=' + n.toString();
     const j: Record<string, Object> | null = await ApiSource.get(path);
@@ -127,6 +160,17 @@ export class ApiSource {
       g.day = (hours === undefined || hours === null || hours.length === 0)
         ? null : ApiSource.toDay(hours);
       out.push(g);
+    }
+    if (out.length > 0) {
+      const e: GridEntry = new GridEntry();
+      e.ts = Date.now();
+      e.points = out;
+      ApiSource.gridCache.set(key, e);
+      // 超出上限时丢掉最早插入的一片
+      while (ApiSource.gridCache.size > ApiSource.GRID_MAX) {
+        const oldest: string = ApiSource.gridCache.keys().next().value as string;
+        ApiSource.gridCache.delete(oldest);
+      }
     }
     return out;
   }
