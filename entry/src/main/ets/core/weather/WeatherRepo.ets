@@ -2,8 +2,7 @@ import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { DayData, HourlyWeather } from '../data/Models';
 import { WeatherBundle, WeatherSourceKind } from './WeatherTypes';
-import { QWeatherSource } from './QWeatherSource';
-import { OpenMeteoSource } from './OpenMeteoSource';
+import { ApiSource } from './ApiSource';
 import { Logger } from '../../common/Logger';
 
 /**
@@ -12,7 +11,7 @@ import { Logger } from '../../common/Logger';
  * 华为 Weather Kit 已排除：官方文档明确「仅面向系统应用开放，暂不对外开放」，
  * 第三方应用无法申请，因此境内主源只有和风天气。
  *
- * L0 和风天气（境内主源，KEY 待激活）
+ * L0 今夜星服务端（阿里云 ECS，代调和风，Key 不下发到客户端）
  * L1 本地缓存（30 分钟内直接用，超时仍作兜底）
  * L2 无预报（返回 ok=false，界面要明示）
  */
@@ -20,8 +19,7 @@ export class WeatherRepo {
   private static readonly STORE: string = 'weather_cache';
   private static readonly TTL: number = 30 * 60 * 1000;
   /**
-   * 是否允许境外源兜底。
-   * 发布版必须为 false（数据不出境原则）；开发期置 true 便于验证链路。
+   * 是否允许境外源兜底（历史开关，境外源已移除，保留常量避免改动面过大）。
    */
   private static readonly ALLOW_FOREIGN: boolean = false;
 
@@ -184,30 +182,16 @@ export class WeatherRepo {
       if (cached !== null && !cached.stale) return cached;
     }
 
-    // L1 和风
-    const qw: DayData | null = await QWeatherSource.fetch(lat, lon, withAir);
+    // L0 今夜星服务端（Key 只在服务端）
+    const qw: DayData | null = await ApiSource.wx(lat, lon);
     if (qw !== null) {
       await WeatherRepo.saveCache(ctx, k, qw, WeatherSourceKind.QWEATHER);
       const b: WeatherBundle = new WeatherBundle();
       b.day = qw;
-      b.source = WeatherSourceKind.QWEATHER;
+      b.source = '今夜星服务端';
       b.updatedAt = Date.now();
       b.ok = true;
       return b;
-    }
-
-    // 开发期兜底：Open-Meteo
-    if (WeatherRepo.ALLOW_FOREIGN) {
-      const om: DayData | null = await OpenMeteoSource.fetch(lat, lon);
-      if (om !== null) {
-        await WeatherRepo.saveCache(ctx, k, om, WeatherSourceKind.OPEN_METEO);
-        const b: WeatherBundle = new WeatherBundle();
-        b.day = om;
-        b.source = WeatherSourceKind.OPEN_METEO;
-        b.updatedAt = Date.now();
-        b.ok = true;
-        return b;
-      }
     }
 
     // L2 缓存兜底

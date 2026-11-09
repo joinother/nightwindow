@@ -1,0 +1,22 @@
+[Unit]
+Description=Night Window weather proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/nightwindow-api
+EnvironmentFile=/etc/nightwindow-api.env
+ExecStart=/usr/bin/node /opt/nightwindow-api/server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log
+StandardOutput=append:/var/log/nightwindow-api.log
+StandardError=append:/var/log/nightwindow-api.log
+
+[Install]
+WantedBy=multi-user.target

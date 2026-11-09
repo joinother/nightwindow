@@ -458,8 +458,12 @@ struct Index {
 
       const M: number = 18;
       const dense: GridPoint[] = IndexGrid.interpolate(pts, n, M);
-      const halfLat: number = (dLat / (n - 1)) * 0.57;
-      const halfLon: number = (dLon / (n - 1)) * 0.57;
+      // 格子大小直接由插值后的密网格间距决定，两端算法再不同也不会错位
+      const rowStep: number = M < dense.length
+        ? Math.abs(dense[M].lat - dense[0].lat) : (dLat / (M - 1));
+      const colStep: number = M > 1 ? Math.abs(dense[1].lon - dense[0].lon) : (dLon / (M - 1));
+      const halfLat: number = rowStep * 0.58;
+      const halfLon: number = colStep * 0.58;
       for (let i = 0; i < dense.length; i += 24) {
         const batch: GridPoint[] = dense.slice(i, i + 24);
         const jobs: Promise<void>[] = batch.map((g: GridPoint) => {

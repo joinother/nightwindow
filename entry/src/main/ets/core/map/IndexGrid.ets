@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { City, DayData, ScoreResult, Window } from '../data/Models';
 import { DEEP_TARGETS, scoreFor, windowFor } from '../score/Score';
 import { WeatherRepo } from '../weather/WeatherRepo';
+import { ApiGridPoint, ApiSource } from '../weather/ApiSource';
 import { CITIES } from '../../viewmodel/TonightViewModel';
 import { ChinaCity, CHINA_CITIES } from './ChinaCities';
 
@@ -48,26 +49,26 @@ export class IndexGrid {
         pts.push(p);
       }
     }
-    const CHUNK: number = 6;
-    for (let s = 0; s < pts.length; s += CHUNK) {
-      const slice: GridPoint[] = pts.slice(s, s + CHUNK);
-      const jobs: Promise<void>[] = slice.map((p: GridPoint) => {
-        return WeatherRepo.load(ctx, p.lat, p.lon, false, false).then((b) => {
-          if (!b.ok) {
-            p.ok = false;
-            return;
-          }
-          const r: ScoreResult = IndexGrid.scoreAt(b.day, p.lat, p.lon, p.bortle, ymd);
-          p.score = r.total;
-          p.ok = true;
-        });
-      });
-      await Promise.all(jobs);
+    const grid: ApiGridPoint[] = await ApiSource.grid(
+      (latMin + latMax) / 2, (lonMin + lonMax) / 2,
+      Math.max(100, (latMax - latMin) * 111), n);
+    for (let i = 0; i < pts.length; i++) {
+      const g: ApiGridPoint | null = i < grid.length ? grid[i] : null;
+      if (g === null || g.day === null) {
+        pts[i].ok = false;
+        continue;
+      }
+      // 用服务端回传的坐标，避免两端算出的网格错位
+      pts[i].lat = g.lat;
+      pts[i].lon = g.lon;
+      const r: ScoreResult = IndexGrid.scoreAt(g.day!, g.lat, g.lon, pts[i].bortle, ymd);
+      pts[i].score = r.total;
+      pts[i].ok = true;
     }
     return pts;
   }
 
-  /** 按城市点逐个算分（备用，暂未使用） */
+  /** 按城市点逐个算分（旧路径，已由服务端网格替代） */
   static async buildNational(ctx: common.Context, ymd: number[]): Promise<GridPoint[]> {
     const pts: GridPoint[] = [];
     for (const c of CHINA_CITIES) {
