@@ -1211,6 +1211,25 @@ struct Index {
   }
 
   @Builder
+  RefreshHeader() {
+    Row({ space: 8 }) {
+      LoadingProgress()
+        .width(18)
+        .height(18)
+        .color('#FFFFFF')
+      Text(this.refreshPrompt)
+        .fontSize(12)
+        .fontColor('#FFFFFF')
+        .textShadow({ radius: 8, color: '#B3000000' })
+    }
+    .height(52)
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .clip(true)
+  }
+
+  @Builder
   NeedleTag(color: string, label: string) {
     Row({ space: 3 }) {
       Column()
@@ -1278,13 +1297,11 @@ struct Index {
       right: 20 + this.insetLeft,
       top: this.insetTop
     })
-    // 下拉时标题跟着内容一起下移，避免只有内容在动
-    .translate({ y: this.pullOffset })
   }
 
   @Builder
   PosterPage() {
-    Refresh({ refreshing: $$this.refreshing, promptText: this.refreshPrompt }) {
+    Refresh({ refreshing: $$this.refreshing, builder: this.RefreshHeader() }) {
     Stack({ alignContent: Alignment.BottomStart }) {
       // 内容
       Column() {
@@ -1411,7 +1428,8 @@ struct Index {
     .height('100%')
     .backgroundColor(Color.Transparent)
     .opacity(this.pageIndex === 0 ? this.pgAlpha : 1)
-    .translate({ x: this.pageIndex === 0 ? this.pgShiftX : 0 })
+    // 抵掉 Refresh 自带的下拉位移：只有加载动效被拉出来，画面本身不动
+    .translate({ x: this.pageIndex === 0 ? this.pgShiftX : 0, y: -this.pullOffset })
     }
     .onRefreshing(() => { this.pullToRefresh(); })
     .onOffsetChange((v: number) => { this.pullOffset = px2vp(v); })
