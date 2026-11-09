@@ -15,6 +15,8 @@ const TTL_MS = Number(process.env.NW_TTL_MS || 30 * 60 * 1000);
 const MAX_KEYS = 800;
 
 const cache = new Map(); // key -> {ts, hours}
+const negCache = new Map(); // key -> ts（失败点短期不再重试）
+const NEG_TTL = 10 * 60 * 1000;
 const ipHits = new Map(); // ip -> {ts, count}
 
 function log(...a) { console.log(new Date().toISOString(), ...a); }
@@ -55,6 +57,8 @@ async function fetchPoint(lat, lon) {
   const hit = cache.get(key);
   const now = Date.now();
   if (hit && now - hit.ts < TTL_MS) return hit.hours;
+  const neg = negCache.get(key);
+  if (neg && now - neg < NEG_TTL) return null;
 
   const loc = round05(lon).toFixed(2) + ',' + round05(lat).toFixed(2);
   const url = 'https://' + QW_HOST + '/v7/weather/24h?location=' + loc + '&key=' + QW_KEY;
@@ -62,9 +66,18 @@ async function fetchPoint(lat, lon) {
   const timer = setTimeout(() => ac.abort(), 8000);
   try {
     const res = await fetch(url, { signal: ac.signal, headers: { 'Accept-Encoding': 'identity' } });
-    if (!res.ok) { log('upstream http', res.status, loc); return null; }
+    if (!res.ok) {
+      // 400 = 和风不支持该坐标（海面/境外），属正常，短期不再重试
+      if (res.status === 400) negCache.set(key, Date.now());
+      else log('upstream http', res.status, loc);
+      return null;
+    }
     const body = await res.json();
-    if (body.code !== '200' || !Array.isArray(body.hourly)) { log('upstream code', body.code, loc); return null; }
+    if (body.code !== '200' || !Array.isArray(body.hourly)) {
+      if (body.code === '204' || body.code === '404') negCache.set(key, Date.now());
+      else log('upstream code', body.code, loc);
+      return null;
+    }
     const hours = body.hourly.map(simplify);
     if (cache.size > MAX_KEYS) cache.delete(cache.keys().next().value);
     cache.set(key, { ts: now, hours });
@@ -78,9 +91,10 @@ async function fetchPoint(lat, lon) {
 }
 
 function buildGrid(lat, lon, spanKm, n) {
+  // spanKm 是总跨度，不是步长：步长 = 跨度 /(n-1)
   const half = (n - 1) / 2;
-  const dLat = spanKm / 111.0;
-  const dLon = spanKm / (111.0 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
+  const dLat = spanKm / (n - 1) / 111.0;
+  const dLon = spanKm / (n - 1) / (111.0 * Math.max(0.2, Math.cos(lat * Math.PI / 180)));
   const pts = [];
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {

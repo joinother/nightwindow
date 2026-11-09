@@ -396,12 +396,20 @@ struct Index {
   }
 
   private centerOnMe(ctrl: map.MapComponentController): void {
+    // 用 moveCamera 立即跳转；animateCamera(...,0) 在部分版本会被忽略
     try {
-      ctrl.animateCamera(map.newLatLng({ latitude: this.myLat(), longitude: this.myLon() },
-        9), 0);
+      ctrl.moveCamera(map.newLatLng({ latitude: this.myLat(), longitude: this.myLon() }, 9));
     } catch (e) {
       console.warn('center camera failed');
     }
+    // 地图初始化可能异步覆盖镜头，200ms 后再确认一次
+    setTimeout(() => {
+      try {
+        ctrl.moveCamera(map.newLatLng({ latitude: this.myLat(), longitude: this.myLon() }, 9));
+      } catch (e) {
+        console.warn('recenter failed');
+      }
+    }, 200);
   }
 
   /** 「你在这里」标记 */
@@ -442,8 +450,14 @@ struct Index {
       this.gridPts = pts;
 
       const okPts: GridPoint[] = pts.filter((g: GridPoint) => g.ok);
+      console.info('NightWindow grid: total=' + pts.length.toString()
+        + ' ok=' + okPts.length.toString() + ' span=' + Math.round(spanKm).toString());
+      if (pts.length === 0) {
+        this.gridHint = '网络异常 · 稍后再试';
+        return;
+      }
       if (okPts.length === 0) {
-        this.gridHint = '取数失败';
+        this.gridHint = '这一带取不到预报';
         return;
       }
       let sumScore: number = 0;
@@ -462,8 +476,8 @@ struct Index {
       const rowStep: number = M < dense.length
         ? Math.abs(dense[M].lat - dense[0].lat) : (dLat / (M - 1));
       const colStep: number = M > 1 ? Math.abs(dense[1].lon - dense[0].lon) : (dLon / (M - 1));
-      const halfLat: number = rowStep * 0.58;
-      const halfLon: number = colStep * 0.58;
+      const halfLat: number = rowStep * 0.5;
+      const halfLon: number = colStep * 0.5;
       for (let i = 0; i < dense.length; i += 24) {
         const batch: GridPoint[] = dense.slice(i, i + 24);
         const jobs: Promise<void>[] = batch.map((g: GridPoint) => {

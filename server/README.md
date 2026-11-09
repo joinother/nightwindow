@@ -12,7 +12,7 @@
 |---|---|
 | `GET /healthz` | 存活检查 |
 | `GET /v1/wx?lat&lon` | 单点 24 小时预报 |
-| `GET /v1/grid?lat&lon&span&n` | 网格预报（span 公里，n ≤ 9）|
+| `GET /v1/grid?lat&lon&span&n` | 网格预报（`span` = **总跨度**公里，`n` ≤ 9）|
 
 单 IP 每小时 120 次（`X-Forwarded-For` 由 nginx 注入）。
 
@@ -55,6 +55,13 @@ systemctl daemon-reload && systemctl enable --now nightwindow-api
 nginx -t -c /etc/skyinstrument-website/nginx.conf && \
   nginx -s reload -c /etc/skyinstrument-website/nginx.conf
 ```
+
+## 注意
+
+`span` 是**总跨度**，不是步长：步长 = `span / (n - 1)`。
+早期版本按步长实现，实际采样范围是请求值的 6 倍，导致地图色场偏移、放大后大量点落在海面/境外而「取数失败」。
+
+和风对海面与境外坐标返回 **400**，这类点会进 10 分钟负缓存，不再重复请求。
 
 ## 配额
 
