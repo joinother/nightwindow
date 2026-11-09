@@ -23,6 +23,8 @@ class GridEntry {
 
 export class ApiSource {
   static readonly BASE: string = 'https://skyinstrument.cn/nw';
+  /** 上次取数时上游数据已经放了多久（秒），用来校正本地缓存起点 */
+  static lastAgeSec: number = 0;
 
   /**
    * 客户端网格缓存。
@@ -97,11 +99,14 @@ export class ApiSource {
 
   /** 单点天气 */
   static async wx(lat: number, lon: number): Promise<DayData | null> {
+    ApiSource.lastAgeSec = 0;
     const j: Record<string, Object> | null =
       await ApiSource.get('/v1/wx?lat=' + lat.toFixed(3) + '&lon=' + lon.toFixed(3));
     if (j === null || j['ok'] !== true) return null;
     const pts: Record<string, Object>[] = j['points'] as Record<string, Object>[];
     if (pts === undefined || pts.length === 0) return null;
+    const ageRaw: Object | undefined = pts[0]['age'];
+    ApiSource.lastAgeSec = ageRaw === undefined || ageRaw === null ? 0 : Number(ageRaw);
     const hours: Record<string, Object>[] = pts[0]['hours'] as Record<string, Object>[];
     if (hours === undefined || hours === null || hours.length === 0) return null;
     return ApiSource.toDay(hours);

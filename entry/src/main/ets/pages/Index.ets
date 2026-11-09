@@ -53,6 +53,7 @@ struct Index {
   private sampleCount: number = 0;
   private idleTimer: number = -1;
   private camTimer: number = -1;
+  private minuteTimer: number = -1;
   @Local refreshing: boolean = false;
   @Local pullOffset: number = 0;
   @Local refreshPrompt: ResourceStr = '下拉刷新';
@@ -781,6 +782,17 @@ struct Index {
   }
 
 
+  /** 每分钟走一次：更新时间，跨天了就重算并重取天气 */
+  private tickMinute(): void {
+    this.aboutToAppearClock();
+    if (TonightViewModel.syncToday()) {
+      console.info('NightWindow date rolled over, refreshing');
+      this.vm.dateEpoch = this.vm.dateEpoch + 1;
+      this.vm.refresh();
+      this.loadWeather(true);
+    }
+  }
+
   aboutToAppearClock(): void {
     const d: Date = new Date();
     const h: number = d.getHours();
@@ -870,6 +882,13 @@ struct Index {
     this.checkFeedback();
     this.loadSharePref();
     this.aboutToAppearClock();
+    if (this.minuteTimer > 0) clearInterval(this.minuteTimer);
+    this.minuteTimer = setInterval(() => { this.tickMinute(); }, 60000);
+  }
+
+  aboutToDisappear(): void {
+    if (this.minuteTimer > 0) { clearInterval(this.minuteTimer); this.minuteTimer = -1; }
+    if (this.camTimer > 0) { clearInterval(this.camTimer); this.camTimer = -1; }
   }
 
   build() {

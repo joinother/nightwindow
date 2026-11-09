@@ -17,6 +17,8 @@ import { Logger } from '../../common/Logger';
  */
 export class WeatherRepo {
   private static readonly STORE: string = 'weather_cache';
+  /** 缓存条目上限：每条约 2KB，50 条约 100KB */
+  private static readonly MAX_ENTRIES: number = 50;
   private static readonly TTL: number = 30 * 60 * 1000;
   /**
    * 是否允许境外源兜底（历史开关，境外源已移除，保留常量避免改动面过大）。
@@ -31,15 +33,51 @@ export class WeatherRepo {
   }
 
   private static async saveCache(ctx: common.Context, k: string, d: DayData,
-    source: string): Promise<void> {
+    source: string, ageSec: number = 0): Promise<void> {
     const p: preferences.Preferences = await preferences.getPreferences(ctx, WeatherRepo.STORE);
+    // 用上游已存放的时长回退时间戳，避免「服务端刚过期、客户端还以为新鲜」
+    const stamp: number = Date.now() - Math.max(0, ageSec) * 1000;
     const payload: Record<string, string> = {
       'source': source,
-      'ts': Date.now().toString(),
+      'ts': stamp.toString(),
       'json': JSON.stringify(WeatherRepo.toJson(d))
     };
     await p.put(k, JSON.stringify(payload));
+    await WeatherRepo.prune(ctx, p);
     await p.flush();
+  }
+
+  /** 超过上限时删掉最老的条目（按 payload 里的 ts 排序） */
+  private static async prune(ctx: common.Context, p: preferences.Preferences): Promise<void> {
+    try {
+      const all: Object = await p.getAll();
+      const map: Record<string, Object> = all as Record<string, Object>;
+      const keys: string[] = Object.keys(map);
+      if (keys.length <= WeatherRepo.MAX_ENTRIES) return;
+
+      const stamped: string[] = [];
+      const tsOf: Map<string, number> = new Map();
+      for (const key of keys) {
+        if (key === 'throttle') continue;
+        let ts: number = 0;
+        try {
+          const meta: Record<string, string> = JSON.parse(map[key] as string) as Record<string, string>;
+          ts = Number(meta['ts']);
+        } catch (e) {
+          ts = 0;
+        }
+        tsOf.set(key, ts);
+        stamped.push(key);
+      }
+      stamped.sort((a: string, b: string) => (tsOf.get(a) as number) - (tsOf.get(b) as number));
+      const excess: number = stamped.length - WeatherRepo.MAX_ENTRIES;
+      for (let i = 0; i < excess; i++) {
+        await p.delete(stamped[i]);
+      }
+      console.info('NightWindow cache pruned ' + excess.toString());
+    } catch (e) {
+      console.warn('prune failed');
+    }
   }
 
   private static async readCache(ctx: common.Context, k: string): Promise<WeatherBundle | null> {
@@ -185,7 +223,7 @@ export class WeatherRepo {
     // L0 今夜星服务端（Key 只在服务端）
     const qw: DayData | null = await ApiSource.wx(lat, lon);
     if (qw !== null) {
-      await WeatherRepo.saveCache(ctx, k, qw, WeatherSourceKind.QWEATHER);
+      await WeatherRepo.saveCache(ctx, k, qw, WeatherSourceKind.QWEATHER, ApiSource.lastAgeSec);
       const b: WeatherBundle = new WeatherBundle();
       b.day = qw;
       b.source = '今夜星服务端';

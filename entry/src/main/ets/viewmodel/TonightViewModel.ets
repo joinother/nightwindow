@@ -69,11 +69,36 @@ export class TonightViewModel {
   /** 相对基准夜（2026-11-07）的偏移，右滑 +1、左滑 -1 */
   @Trace dayOffset: number = 0;
 
-  private static readonly BASE: number[] = [2026, 11, 7];
+  /**
+   * 「今夜」的基准日期。
+   *
+   * 凌晨 0–8 点算作前一晚（18:00 起算的那一夜），否则 00:30 打开会变成
+   * 「今天」的夜，而用户其实还在昨晚的观测窗口里。
+   */
+  private static BASE: number[] = TonightViewModel.computeBase();
+  @Trace dateEpoch: number = 0;   // 日期变化时自增，撬动 @Computed 重算
+
+  private static computeBase(): number[] {
+    const d: Date = new Date();
+    if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+    return [d.getFullYear(), d.getMonth() + 1, d.getDate()];
+  }
+
+  /** 跨天了就更新基准日，返回是否发生变化 */
+  static syncToday(): boolean {
+    const t: number[] = TonightViewModel.computeBase();
+    if (t[0] === TonightViewModel.BASE[0] && t[1] === TonightViewModel.BASE[1]
+      && t[2] === TonightViewModel.BASE[2]) {
+      return false;
+    }
+    TonightViewModel.BASE = t;
+    return true;
+  }
 
   /** 当前夜的年月日 */
   @Computed
   get ymd(): number[] {
+    const _v: number = this.dateEpoch;   // 依赖它，跨天后才会重算
     const d: Date = new Date(TonightViewModel.BASE[0], TonightViewModel.BASE[1] - 1,
       TonightViewModel.BASE[2] + this.dayOffset);
     return [d.getFullYear(), d.getMonth() + 1, d.getDate()];
@@ -81,6 +106,7 @@ export class TonightViewModel {
 
   @Computed
   get dateText(): string {
+    const _v: number = this.dateEpoch;
     const d: Date = new Date(TonightViewModel.BASE[0], TonightViewModel.BASE[1] - 1,
       TonightViewModel.BASE[2] + this.dayOffset);
     const wd: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];

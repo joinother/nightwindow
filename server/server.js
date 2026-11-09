@@ -136,7 +136,12 @@ async function fetchPoint(lat, lon) {
   const key = round05(lat) + ',' + round05(lon);
   const hit = cache.get(key);
   const now = Date.now();
-  if (hit && now - hit.ts < TTL_MS) return hit.hours;
+  if (hit && now - hit.ts < TTL_MS) {
+    // LRU：命中就移到末尾，避免热门条目被冷门挤掉
+    cache.delete(key);
+    cache.set(key, hit);
+    return { hours: hit.hours, ts: hit.ts };
+  }
   const neg = negCache.get(key);
   if (neg && now - neg < NEG_TTL) return null;
 
@@ -159,10 +164,15 @@ async function fetchPoint(lat, lon) {
       return null;
     }
     const hours = body.hourly.map(simplify);
-    if (cache.size > MAX_KEYS) cache.delete(cache.keys().next().value);
+    // 超上限时循环淘汰最早插入的条目
+    while (cache.size >= MAX_KEYS) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
     cache.set(key, { ts: now, hours });
     scheduleSave();
-    return hours;
+    return { hours, ts: now };
   } catch (e) {
     log('fetch fail', loc, e.message);
     return null;
@@ -204,17 +214,26 @@ async function handleGrid(u) {
     const slice = keys.slice(i, i + CONC);
     await Promise.all(slice.map(async (k) => {
       const p = uniq.get(k);
-      const hours = await fetchPoint(p.lat, p.lon);
-      if (hours) out.set(k, hours);
+      const got = await fetchPoint(p.lat, p.lon);
+      if (got) out.set(k, got);
     }));
   }
 
+  const nowMs = Date.now();
+  let oldestSec = 0;
   const points = pts.map((p) => {
-    const hours = out.get(round05(p.lat) + ',' + round05(p.lon)) || null;
-    return { lat: Number(p.lat.toFixed(4)), lon: Number(p.lon.toFixed(4)), hours };
+    const got = out.get(round05(p.lat) + ',' + round05(p.lon)) || null;
+    const age = got ? Math.max(0, Math.round((nowMs - got.ts) / 1000)) : null;
+    if (age !== null && age > oldestSec) oldestSec = age;
+    return {
+      lat: Number(p.lat.toFixed(4)),
+      lon: Number(p.lon.toFixed(4)),
+      age,
+      hours: got ? got.hours : null
+    };
   });
   const ok = points.filter((p) => p.hours).length;
-  return { ok: ok > 0, okPoints: ok, total: points.length, span, n, points };
+  return { ok: ok > 0, okPoints: ok, total: points.length, span, n, oldestAge: oldestSec, points };
 }
 
 async function handleWorld() {
@@ -223,8 +242,9 @@ async function handleWorld() {
   for (let i = 0; i < WORLD_CITIES.length; i += CONC) {
     const slice = WORLD_CITIES.slice(i, i + CONC);
     const rows = await Promise.all(slice.map(async ([name, lat, lon]) => {
-      const hours = await fetchPoint(lat, lon);
-      return { name, lat, lon, hours };
+      const got = await fetchPoint(lat, lon);
+      const age = got ? Math.max(0, Math.round((Date.now() - got.ts) / 1000)) : null;
+      return { name, lat, lon, age, hours: got ? got.hours : null };
     }));
     for (const r of rows) out.push(r);
   }
@@ -236,8 +256,9 @@ async function handleWx(u) {
   const lat = Number(u.searchParams.get('lat'));
   const lon = Number(u.searchParams.get('lon'));
   if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 85) throw new Error('bad lat/lon');
-  const hours = await fetchPoint(lat, lon);
-  return { ok: !!hours, points: [{ lat, lon, hours }] };
+  const got = await fetchPoint(lat, lon);
+  const age = got ? Math.max(0, Math.round((Date.now() - got.ts) / 1000)) : null;
+  return { ok: !!got, oldestAge: age ?? 0, points: [{ lat, lon, age, hours: got ? got.hours : null }] };
 }
 
 const server = http.createServer(async (req, res) => {
