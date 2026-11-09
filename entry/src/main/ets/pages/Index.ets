@@ -386,6 +386,13 @@ struct Index {
         }
       }
       this.gridHint = okCount === 0 ? '网格取数失败' : ('网格 ' + okCount.toString() + ' 点');
+      // 画完把镜头拉回网格范围，否则会被标记点带偏
+      try {
+        ctrl.animateCamera(map.newLatLng(
+          { latitude: this.vm.city.lat, longitude: this.vm.city.lon }, 9), 500);
+      } catch (e) {
+        console.warn('animateCamera failed');
+      }
     } catch (e) {
       this.gridHint = '网格取数失败';
     } finally {
@@ -628,49 +635,77 @@ struct Index {
       .height('100%')
 
       if (this.showMap) {
-        Column() {
-          Row() {
-            Text('观星指数地图 · ' + this.cityName2)
-              .fontSize(15)
-              .fontColor('#FFFFFF')
-            Blank()
-            Text('关闭')
-              .fontSize(14)
-              .fontColor('#FFFFFF')
-              .onClick(() => { this.showMap = false; })
+        Stack() {
+          MapComponent({ mapOptions: this.mapOptions, mapCallback: this.mapCallback })
+            .width('100%')
+            .height('100%')
+
+          // 左上：玻璃标题胶囊（官方那种模糊圆角）
+          Text('观星指数 · ' + this.cityName2)
+            .fontSize(13)
+            .fontColor('#FFFFFF')
+            .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+            .borderRadius(18)
+            .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+            .borderWidth(0.5)
+            .borderColor('#33FFFFFF')
+            .position({ left: 20, top: 20 + this.insetTop })
+            .hitTestBehavior(HitTestMode.None)
+
+          // 右上：圆形关闭按钮，和地图自带控件同一种材质
+          Stack({ alignContent: Alignment.Center }) {
+            Column()
+              .width(13)
+              .height(1.6)
+              .borderRadius(1)
+              .backgroundColor('#FFFFFF')
+              .rotate({ angle: 45 })
+            Column()
+              .width(13)
+              .height(1.6)
+              .borderRadius(1)
+              .backgroundColor('#FFFFFF')
+              .rotate({ angle: -45 })
           }
-          .width('100%')
-          .padding({ left: 24, right: 24, top: 18, bottom: 14 })
+          .width(40)
+          .height(40)
+          .borderRadius(20)
+          .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+          .borderWidth(0.5)
+          .borderColor('#33FFFFFF')
+          .position({ right: 20, top: 20 + this.insetTop })
+          .onClick(() => { this.showMap = false; })
 
-          Stack() {
-            MapComponent({ mapOptions: this.mapOptions, mapCallback: this.mapCallback })
-              .width('100%')
-              .height('100%')
-
-            // 图例
-            Column({ space: 6 }) {
-              Text('观星指数').fontSize(10).fontColor('#B3B3B3')
-              this.LegendRow('#4CAF50', '80+  极佳')
-              this.LegendRow('#A8C256', '60–80  好')
-              this.LegendRow('#D9B62B', '40–60  一般')
-              this.LegendRow('#E8892B', '20–40  差')
-              this.LegendRow('#D8432E', '<20  很差')
-              if (this.gridHint.length > 0) {
-                Text(this.gridHint).fontSize(9).fontColor('#8C8C8C').margin({ top: 4 })
-              }
+          // 左下：磨砂图例
+          Column({ space: 6 }) {
+            Text('观星指数').fontSize(10).fontColor('#B3B3B3')
+            this.LegendRow('#4CAF50', '80+  极佳')
+            this.LegendRow('#A8C256', '60–80  好')
+            this.LegendRow('#D9B62B', '40–60  一般')
+            this.LegendRow('#E8892B', '20–40  差')
+            this.LegendRow('#D8432E', '<20  很差')
+            if (this.gridHint.length > 0) {
+              Text(this.gridHint).fontSize(9).fontColor('#8C8C8C').margin({ top: 4 })
             }
-            .alignItems(HorizontalAlign.Start)
-            .padding(12)
-            .backgroundColor('#66000000')
-            .borderRadius(12)
-            .position({ left: 20, bottom: 20 })
           }
-          .layoutWeight(1)
-          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .padding(12)
+          .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+          .borderWidth(0.5)
+          .borderColor('#26FFFFFF')
+          .borderRadius(14)
+          .position({ left: 20, bottom: 20 })
+          .hitTestBehavior(HitTestMode.None)
         }
         .width('100%')
         .height('100%')
         .backgroundColor('#0A0A0A')
+        .transition(TransitionEffect.asymmetric(
+          TransitionEffect.OPACITY.animation({ duration: 220, curve: Curve.Friction })
+            .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 })
+              .animation({ duration: 220, curve: Curve.Friction })),
+          TransitionEffect.OPACITY.animation({ duration: 160, curve: Curve.EaseIn })
+        ))
       }
     }
     .width('100%')
