@@ -36,6 +36,14 @@ struct Index {
   @Local gridPts: GridPoint[] = [];
   @Local gridLoading: boolean = false;
   @Local gridHint: string = '';
+  @Local fieldTick: number = 0;
+  private canvasCtx: CanvasRenderingContext2D =
+    new CanvasRenderingContext2D(new RenderingContextSettings(true));
+  private canvasReady: boolean = false;
+  private mapW: number = 0;
+  private mapH: number = 0;
+  private fieldPts: GridPoint[] = [];
+  private fieldN: number = 8;
   private userLat: number = 0;      // 真实定位坐标，0 表示未知
   private userLon: number = 0;
   private lastSampleLat: number = 0;
@@ -414,41 +422,49 @@ struct Index {
   }
 
   /** 在地图上画 4×4 指数色块 */
-  /** 按当前视野取景：跨度由 zoom 决定，7×7 采样 → 18×18 插值色场 */
+  /** 按当前可见区域采样：范围跟着屏幕走，色场铺满全屏 */
   private async drawIndexGrid(ctrl: map.MapComponentController): Promise<void> {
     if (this.gridLoading) return;
     this.gridLoading = true;
     this.gridHint = '正在取预报…';
     try {
-      const pos: mapCommon.CameraPosition = ctrl.getCameraPosition();
-      const zoom: number = pos.zoom;
-      // 视野宽度（km）随 zoom 变化，缩放到全国时跨度自然变大
-      const spanKm: number = Math.max(150, Math.min(20000, 42000 / Math.pow(2, zoom)));
-      const lat: number = pos.target.latitude;
-      const lon: number = pos.target.longitude;
-      this.lastSampleLat = lat;
-      this.lastSampleLon = lon;
-      this.lastSampleZoom = zoom;
+      const proj0: map.Projection = ctrl.getProjection();
+      const region: mapCommon.VisibleRegion = proj0.getVisibleRegion();
+      const lats: number[] = [region.farLeft.latitude, region.farRight.latitude,
+        region.nearLeft.latitude, region.nearRight.latitude];
+      const lons: number[] = [region.farLeft.longitude, region.farRight.longitude,
+        region.nearLeft.longitude, region.nearRight.longitude];
+      let latMin: number = lats[0];
+      let latMax: number = lats[0];
+      let lonMin: number = lons[0];
+      let lonMax: number = lons[0];
+      for (let i = 1; i < 4; i++) {
+        latMin = Math.min(latMin, lats[i]);
+        latMax = Math.max(latMax, lats[i]);
+        lonMin = Math.min(lonMin, lons[i]);
+        lonMax = Math.max(lonMax, lons[i]);
+      }
+      // 留 8% 余量，平移时不至于马上出现空白
+      const padLat: number = (latMax - latMin) * 0.08;
+      const padLon: number = (lonMax - lonMin) * 0.08;
+      latMin -= padLat; latMax += padLat; lonMin -= padLon; lonMax += padLon;
+
+      const centLat: number = (latMin + latMax) / 2;
+      const centLon: number = (lonMin + lonMax) / 2;
+      const spanKm: number = (latMax - latMin) * 111;
+      this.lastSampleLat = centLat;
+      this.lastSampleLon = centLon;
+      this.lastSampleZoom = ctrl.getCameraPosition().zoom;
       this.lastSampleTs = Date.now();
       this.sampleCount = this.sampleCount + 1;
 
-      const n: number = spanKm > 5000 ? 9 : 7;
-      const dLat: number = spanKm / 111.0;
-      const dLon: number = spanKm / (111.0 * Math.cos(lat * Math.PI / 180));
       const ctx: common.Context = getContext(this) as common.Context;
-
-      if (spanKm > 5000) {
-        await this.paintWorldDots(ctrl);
-        return;
-      }
-
-      const pts: GridPoint[] = await IndexGrid.buildBounds(
-        ctx, lat - dLat / 2, lat + dLat / 2, lon - dLon / 2, lon + dLon / 2, n, this.vm.ymd);
-      this.gridPts = pts;
-
+      const n: number = 8;
+      const pts: GridPoint[] = await IndexGrid.buildBounds(ctx, latMin, latMax, lonMin, lonMax, n,
+        this.vm.ymd);
       const okPts: GridPoint[] = pts.filter((g: GridPoint) => g.ok);
-      console.info('NightWindow grid: total=' + pts.length.toString()
-        + ' ok=' + okPts.length.toString() + ' span=' + Math.round(spanKm).toString());
+      console.info('NightWindow grid: total=' + pts.length.toString() + ' ok='
+        + okPts.length.toString() + ' span=' + Math.round(spanKm).toString());
       if (pts.length === 0) {
         this.gridHint = '网络异常 · 稍后再试';
         return;
@@ -459,67 +475,82 @@ struct Index {
       }
       let sumScore: number = 0;
       for (const g of okPts) sumScore += g.score;
-      const avgScore: number = sumScore / okPts.length;
+      const avg: number = sumScore / okPts.length;
       for (const g of pts) {
-        if (!g.ok) { g.score = avgScore; g.ok = true; }
+        if (!g.ok) { g.score = avg; g.ok = true; }
       }
-
       await ctrl.clear();
-  
       const M: number = 40;
-      let dense: GridPoint[];
-      if (spanKm > 5000) {
-        dense = await this.buildWorldField(lat, lon, dLat, dLon, M);
-        if (dense.length === 0) {
-          this.gridHint = '这一带取不到预报';
-          return;
-        }
-      } else {
-        dense = IndexGrid.interpolate(pts, n, M);
-      }
-      await this.paintField(ctrl, dense, M, lat, lon, dLat, dLon);
-      this.gridHint = '跨度 ' + Math.round(spanKm).toString() + ' km · '
-        + okPts.length.toString() + '/' + pts.length.toString() + ' 点';
-      return;
-
-      // 格子大小直接由插值后的密网格间距决定，两端算法再不同也不会错位
-      const rowStep: number = M < dense.length
-        ? Math.abs(dense[M].lat - dense[0].lat) : (dLat / (M - 1));
-      const colStep: number = M > 1 ? Math.abs(dense[1].lon - dense[0].lon) : (dLon / (M - 1));
-      const halfLat: number = rowStep * 0.5;
-      const halfLon: number = colStep * 0.5;
-      for (let i = 0; i < dense.length; i += 24) {
-        const batch: GridPoint[] = dense.slice(i, i + 24);
-        const jobs: Promise<void>[] = batch.map((g: GridPoint) => {
-          const rr: number = Math.max(
-            Math.abs(g.lat - lat) / (dLat / 2),
-            Math.abs(g.lon - lon) / (dLon / 2));
-          const a: number = Math.round(0xDC - 0xC4 * Math.min(1, rr));
-          const opts: mapCommon.MapPolygonOptions = {
-            points: [
-              { latitude: g.lat - halfLat, longitude: g.lon - halfLon },
-              { latitude: g.lat - halfLat, longitude: g.lon + halfLon },
-              { latitude: g.lat + halfLat, longitude: g.lon + halfLon },
-              { latitude: g.lat + halfLat, longitude: g.lon - halfLon }
-            ],
-            fillColor: (a << 24) | this.scoreRgb(g.score),
-            strokeWidth: 0,
-            zIndex: 5
-          };
-          return ctrl.addPolygon(opts).then(() => {}).catch(() => {});
-        });
-        await Promise.all(jobs);
-      }
-      this.gridHint = '跨度 ' + Math.round(spanKm).toString() + ' km · '
-        + okPts.length.toString() + '/' + pts.length.toString() + ' 点'
-
+      const dense: GridPoint[] = IndexGrid.interpolate(pts, n, M);
+      await this.paintField(ctrl, dense, M, centLat, centLon, latMax - latMin, lonMax - lonMin);
+      this.gridHint = okPts.length.toString() + '/' + pts.length.toString() + ' 点';
     } catch (e) {
       const err = e as Error;
-      console.error('NightWindow grid error: ' + err.message + ' | ' + (err.stack ?? ''));
-      this.gridHint = '取数失败 · ' + err.message;
+      console.error('NightWindow grid error: ' + err.message);
+      this.gridHint = '取数失败';
     } finally {
       this.gridLoading = false;
     }
+  }
+
+  /** 用 Canvas 画连续色场：屏幕空间双线性插值，格子小到看不见 */
+  private redrawField(): void {
+    if (!this.canvasReady || this.mapCtl === null) return;
+    if (this.mapW <= 0 || this.mapH <= 0) return;
+    if (this.fieldPts.length < this.fieldN * this.fieldN) return;
+    const c: CanvasRenderingContext2D = this.canvasCtx;
+    c.clearRect(0, 0, vp2px(this.mapW), vp2px(this.mapH));
+
+    const n: number = this.fieldN;
+    const proj: map.Projection = this.mapCtl.getProjection();
+    const sx: number[] = [];
+    const sy: number[] = [];
+    for (const g of this.fieldPts) {
+      const p: mapCommon.MapPoint = proj.toScreenLocation({ latitude: g.lat, longitude: g.lon });
+      sx.push(p.positionX);
+      sy.push(p.positionY);
+    }
+
+    const K: number = 12;
+    for (let i = 0; i < n - 1; i++) {
+      for (let j = 0; j < n - 1; j++) {
+        const id00: number = i * n + j;
+        const id10: number = (i + 1) * n + j;
+        const id01: number = i * n + j + 1;
+        const id11: number = (i + 1) * n + j + 1;
+        const s00: number = this.fieldPts[id00].score;
+        const s10: number = this.fieldPts[id10].score;
+        const s01: number = this.fieldPts[id01].score;
+        const s11: number = this.fieldPts[id11].score;
+        for (let u = 0; u < K; u++) {
+          for (let v = 0; v < K; v++) {
+            const tu: number = u / K;
+            const tv: number = v / K;
+            const tu2: number = (u + 1) / K;
+            const tv2: number = (v + 1) / K;
+            const x0: number = this.blend(sx[id00], sx[id10], sx[id01], sx[id11], tu, tv);
+            const y0: number = this.blend(sy[id00], sy[id10], sy[id01], sy[id11], tu, tv);
+            const x1: number = this.blend(sx[id00], sx[id10], sx[id01], sx[id11], tu2, tv2);
+            const y1: number = this.blend(sy[id00], sy[id10], sy[id01], sy[id11], tu2, tv2);
+            const sc: number = this.blend(s00, s10, s01, s11, (tu + tu2) / 2, (tv + tv2) / 2);
+            const rgb: number = this.scoreRgb(sc);
+            const r: number = (rgb >> 16) & 0xFF;
+            const g: number = (rgb >> 8) & 0xFF;
+            const b: number = rgb & 0xFF;
+            c.fillStyle = 'rgb(' + r.toString() + ',' + g.toString() + ',' + b.toString() + ')';
+            // 小格之间留 0.6vp 重叠，避免抗锯齿产生条纹
+            c.fillRect(x0, y0, Math.max(1.6, x1 - x0 + 0.8), Math.max(1.6, y1 - y0 + 0.8));
+          }
+        }
+      }
+    }
+  }
+
+  /** 屏幕空间双线性插值 */
+  private blend(a: number, b: number, cc: number, d: number, tu: number, tv: number): number {
+    const top: number = a + (b - a) * tu;
+    const bot: number = cc + (d - cc) * tu;
+    return top + (bot - top) * tv;
   }
 
   /** 把密网格画成连续色场 */
