@@ -35,6 +35,9 @@ struct Index {
   @Local gridPts: GridPoint[] = [];
   @Local gridLoading: boolean = false;
   @Local gridHint: string = '';
+  @Local refreshing: boolean = false;
+  @Local refreshHint: string = '';
+  private hintTimer: number = -1;
   @Local showMenu: boolean = false;
   @Local mapError: string = '';
   @Local markerLat: number = 0;
@@ -138,6 +141,38 @@ struct Index {
     } catch (e) {
       this.showFeedback = false;
     }
+  }
+
+  /** 下拉刷新：先过限流，再强制绕缓存重取 */
+  private async pullToRefresh(): Promise<void> {
+    if (this.refreshing) return;
+    const ctx: common.Context = getContext(this) as common.Context;
+    const gate: Record<string, number> = await WeatherRepo.canManualRefresh(ctx);
+    if (gate['ok'] !== 1) {
+      this.refreshing = false;
+      this.showHint(gate['waitMin'] < 0
+        ? '今天刷新次数已用完'
+        : ('刚更新过 · ' + gate['waitMin'].toString() + ' 分钟后再试'));
+      return;
+    }
+    this.refreshing = true;
+    this.refreshHint = '';
+    try {
+      await this.loadWeather(true);
+      await WeatherRepo.markManualRefresh(ctx);
+      this.showHint('已更新');
+    } catch (e) {
+      this.showHint('更新失败');
+    } finally {
+      this.refreshing = false;
+    }
+  }
+
+  /** 顶部的短提示，2 秒后自动消失 */
+  private showHint(text: string): void {
+    this.refreshHint = text;
+    if (this.hintTimer > 0) clearTimeout(this.hintTimer);
+    this.hintTimer = setTimeout(() => { this.refreshHint = ''; }, 2000);
   }
 
   /** 拉取今夜天气并重算分数 */
@@ -528,6 +563,20 @@ struct Index {
           .backgroundColor('#B3000000')
       }
 
+      // 刷新提示 / 刷新中状态
+      if (this.refreshHint.length > 0) {
+        Row({ space: 6 }) {
+          Text(this.refreshHint)
+            .fontSize(12)
+            .fontColor('#FFFFFF')
+        }
+        .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+        .backgroundColor('#66000000')
+        .borderRadius(14)
+        .position({ top: 100 + this.insetTop })
+        .hitTestBehavior(HitTestMode.None)
+      }
+
       Navigation() {
         Tabs({ barPosition: BarPosition.End, index: this.pageIndex }) {
         TabContent() {
@@ -820,6 +869,7 @@ struct Index {
 
   @Builder
   PosterPage() {
+    Refresh({ refreshing: $$this.refreshing }) {
     Stack({ alignContent: Alignment.BottomStart }) {
       // 内容
       Column() {
@@ -941,10 +991,15 @@ struct Index {
     .backgroundColor(Color.Transparent)
     .opacity(this.pageIndex === 0 ? this.pgAlpha : 1)
     .translate({ x: this.pageIndex === 0 ? this.pgShiftX : 0 })
+    }
+    .onRefreshing(() => { this.pullToRefresh(); })
+    .pullToRefresh(true)
+    .refreshOffset(8)
     .gesture(
       PanGesture({ direction: PanDirection.Vertical, distance: 30 })
         .onActionEnd((e: GestureEvent) => {
-          if (e.offsetY < -50 && this.pageIndex === 0) {
+          if (this.pageIndex !== 0) return;
+          if (e.offsetY < -50) {
             this.pageIndex = 1;
           }
         })

@@ -104,6 +104,76 @@ export class WeatherRepo {
     return d;
   }
 
+  /**
+   * 手动刷新限流。
+   * 天气 API 按次计费，刷新必须克制：
+   *   · 两次手动刷新至少间隔 5 分钟
+   *   · 每天最多 12 次
+   */
+  static async canManualRefresh(ctx: common.Context): Promise<Record<string, number>> {
+    const p: preferences.Preferences = await preferences.getPreferences(ctx, WeatherRepo.STORE);
+    const raw: string = p.getSync('throttle', '') as string;
+    const now: number = Date.now();
+    const day: string = new Date(now).toISOString().substring(0, 10);
+
+    let last: number = 0;
+    let count: number = 0;
+    let dayKey: string = day;
+    if (raw.length > 0) {
+      try {
+        const o: Record<string, string> = JSON.parse(raw) as Record<string, string>;
+        last = Number(o['last']);
+        count = Number(o['count']);
+        dayKey = o['day'];
+      } catch (e) {
+        last = 0;
+      }
+    }
+    if (dayKey !== day) count = 0;
+
+    const COOLDOWN: number = 5 * 60 * 1000;
+    const DAILY: number = 12;
+    const result: Record<string, number> = { 'ok': 0, 'waitMin': 0, 'left': 0 };
+    if (count >= DAILY) {
+      result['ok'] = 0;
+      result['left'] = 0;
+      result['waitMin'] = -1;
+      return result;
+    }
+    const elapsed: number = now - last;
+    if (last > 0 && elapsed < COOLDOWN) {
+      result['ok'] = 0;
+      result['waitMin'] = Math.ceil((COOLDOWN - elapsed) / 60000);
+      result['left'] = DAILY - count;
+      return result;
+    }
+    result['ok'] = 1;
+    result['left'] = DAILY - count;
+    return result;
+  }
+
+  /** 记录一次手动刷新 */
+  static async markManualRefresh(ctx: common.Context): Promise<void> {
+    const p: preferences.Preferences = await preferences.getPreferences(ctx, WeatherRepo.STORE);
+    const raw: string = p.getSync('throttle', '') as string;
+    const now: number = Date.now();
+    const day: string = new Date(now).toISOString().substring(0, 10);
+    let count: number = 0;
+    if (raw.length > 0) {
+      try {
+        const o: Record<string, string> = JSON.parse(raw) as Record<string, string>;
+        if (o['day'] === day) count = Number(o['count']);
+      } catch (e) {
+        count = 0;
+      }
+    }
+    const payload: Record<string, string> = {
+      'last': now.toString(), 'day': day, 'count': (count + 1).toString()
+    };
+    await p.put('throttle', JSON.stringify(payload));
+    await p.flush();
+  }
+
   /** 主入口：拿今夜的天气，失败返回 ok=false 的 bundle */
   static async load(ctx: common.Context, lat: number, lon: number,
     forceRefresh: boolean = false, withAir: boolean = true): Promise<WeatherBundle> {
