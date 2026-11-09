@@ -1111,12 +1111,20 @@ struct Index {
         this.toggleShare(this.shareStats);
       })
       this.MineRow('关于', '今夜星 v1.0.0', () => {})
+      this.MineRow('开源协议', 'GPL-3.0 · 可商用，改后须开源', () => {})
 
       Blank()
 
       Text('新ICP备2026008516号-3A')
         .fontSize(10)
         .fontColor('#666666')
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .padding({ bottom: 4 })
+
+      Text('源代码以 GPL-3.0 授权 · 背景图 CC BY 4.0')
+        .fontSize(10)
+        .fontColor('#4D4D4D')
         .width('100%')
         .textAlign(TextAlign.Center)
         .padding({ bottom: 100 })
