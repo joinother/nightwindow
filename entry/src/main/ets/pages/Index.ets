@@ -522,9 +522,11 @@ struct Index {
     .height('100%')
     .bindSheet($$this.showMenu, this.MenuSheet(), {
       height: SheetSize.FIT_CONTENT,
+      width: 560,
       dragBar: true,
-      backgroundColor: '#121212',
-      showClose: true
+      backgroundColor: Color.Transparent,
+      showClose: false,
+      preferType: SheetType.BOTTOM
     })
   }
 
@@ -607,6 +609,13 @@ struct Index {
       this.MineRow('关于', '今夜星 v1.0.0', () => {})
 
       Blank()
+
+      Text('新ICP备2026008516号-3A')
+        .fontSize(10)
+        .fontColor('#666666')
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .padding({ bottom: 100 })
     }
     .width('100%')
     .height('100%')
@@ -637,17 +646,33 @@ struct Index {
   }
 
   @Builder
+  Bar() {
+    Column()
+      .width(16)
+      .height(1.6)
+      .borderRadius(1)
+      .backgroundColor('#FFFFFF')
+  }
+
+  @Builder
   TopBar() {
     Row() {
-      Text('☰')
-        .fontSize(16)
-        .fontColor('#FFFFFF')
-        .width(40)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .borderRadius(20)
-        .systemMaterial(this.glassUltraThin)
-        .onClick(() => { this.showMenu = true; })
+      // 用三条线画图标：字体里的 ☰ 有明显的字面偏移，几何绘制才能真居中
+      Stack({ alignContent: Alignment.Center }) {
+        Column({ space: 4 }) {
+          this.Bar()
+          this.Bar()
+          this.Bar()
+        }
+        .alignItems(HorizontalAlign.Center)
+        // 系统材质容器内的可用区略有下移，补偿 2vp 使图标与圆完全同心
+        .offset({ y: -2 })
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(20)
+      .systemMaterial(this.glassUltraThin)
+      .onClick(() => { this.showMenu = true; })
 
       Blank()
 
@@ -664,16 +689,6 @@ struct Index {
       .onClick(() => { this.showCity = true; })
 
       Blank()
-
-      Text('◎')
-        .fontSize(16)
-        .fontColor('#FFFFFF')
-        .width(40)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .borderRadius(20)
-        .systemMaterial(this.glassUltraThin)
-        .onClick(() => { this.useMyLocation(); })
     }
     .width('100%')
     .height(64 + this.insetTop)
@@ -733,7 +748,7 @@ struct Index {
           .fontColor('#B3B3B3')
           .margin({ top: 6 })
 
-        if (this.showFeedback) {
+        if (false) {
           Row({ space: 14 }) {
             Text('昨晚 少云 · 记一下？')
               .fontSize(12)
@@ -759,7 +774,7 @@ struct Index {
           .margin({ top: 12 })
         }
 
-        if (this.result.total < 30 && this.darkHint !== null) {
+        if (false && this.darkHint !== null) {
           Text('最近的暗夜　' + this.darkHint!.bearing + ' ' + this.darkHint!.km.toString()
             + ' km　' + this.darkHint!.name + '　Bortle ' + this.darkHint!.bortle.toString() + '　›')
             .fontSize(12)
@@ -775,18 +790,6 @@ struct Index {
 
       // 信息入口
       Row({ space: 10 }) {
-        Text('地图')
-          .width(46)
-          .height(32)
-          .borderRadius(16)
-          .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
-          .borderWidth(0.5)
-          .borderColor('#33FFFFFF')
-          .textAlign(TextAlign.Center)
-          .fontSize(12)
-          .fontColor('#FFFFFF')
-          .onClick(() => { this.openMap(); })
-
         Text('i')
           .width(32)
           .height(32)
@@ -832,6 +835,9 @@ struct Index {
         })
     )
     .bindSheet($$this.showCity, this.CitySheet(), {
+      width: 560,
+      showClose: false,
+      preferType: SheetType.BOTTOM,
       height: SheetSize.FIT_CONTENT,
       dragBar: true,
       backgroundColor: '#121212'
@@ -865,7 +871,10 @@ struct Index {
       })
     }
     .width('100%')
-    .padding({ left: 20, right: 20, bottom: 24 })
+    .backgroundColor('#121212')
+    .borderRadius(24)
+    .padding({ left: 24, right: 24, top: 16, bottom: 28 })
+    .margin({ bottom: 20 })
   }
 
   @Builder
