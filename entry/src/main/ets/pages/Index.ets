@@ -3,6 +3,7 @@ import { ScoreResult, City } from '../core/data/Models';
 import { nearestDarkSite, DarkHint } from '../core/data/DarkSites';
 import { FeedbackStore } from '../common/FeedbackStore';
 import { setCloudBias } from '../core/score/Score';
+import { FeedbackUploader } from '../common/FeedbackUploader';
 import { Logger } from '../common/Logger';
 import { ScoreGauge } from '../view/ScoreGauge';
 import { common } from '@kit.AbilityKit';
@@ -26,6 +27,7 @@ struct Index {
   @Local showSheet: boolean = false;
   @Local showCity: boolean = false;
   @Local showFeedback: boolean = false;
+  @Local shareStats: boolean = true;
   @Local showMap: boolean = false;
   @Local showMenu: boolean = false;
   @Local mapError: string = '';
@@ -122,6 +124,16 @@ struct Index {
     }
   }
 
+  /** 攒批上报：联网且用户允许时把本地反馈队列发出去 */
+  private async flushFeedback(): Promise<void> {
+    try {
+      const ctx: common.Context = getContext(this) as common.Context;
+      await FeedbackUploader.flush(ctx, this.vm.city.lat, this.vm.city.lon, '1.0.0');
+    } catch (e) {
+      console.warn('flushFeedback failed');
+    }
+  }
+
   /** 用历史反馈校正云量预报偏差，然后重算 */
   private async applyLearnedBias(): Promise<void> {
     try {
@@ -134,6 +146,25 @@ struct Index {
       }
     } catch (e) {
       console.warn('applyLearnedBias failed');
+    }
+  }
+
+  private async loadSharePref(): Promise<void> {
+    try {
+      const ctx: common.Context = getContext(this) as common.Context;
+      this.shareStats = await FeedbackUploader.shareEnabled(ctx);
+    } catch (e) {
+      this.shareStats = true;
+    }
+  }
+
+  private async toggleShare(on: boolean): Promise<void> {
+    try {
+      const ctx: common.Context = getContext(this) as common.Context;
+      await FeedbackUploader.setShare(ctx, on);
+      if (on) this.flushFeedback();
+    } catch (e) {
+      console.warn('toggleShare failed');
     }
   }
 
@@ -361,7 +392,9 @@ struct Index {
     this.applySafeInsets();
     this.bindTilt();
     this.applyLearnedBias();
+    this.flushFeedback();
     this.checkFeedback();
+    this.loadSharePref();
     this.aboutToAppearClock();
   }
 
@@ -567,6 +600,10 @@ struct Index {
       this.MineRow('地点', this.cityName2, () => { this.showCity = true; })
       this.MineRow('地图', '看暗夜地点', () => { this.openMap(); })
       this.MineRow('数据', '分数怎么来的', () => { this.showSheet = true; })
+      this.MineRow('帮助改进观星指数', this.shareStats ? '匿名统计 · 开' : '匿名统计 · 关', () => {
+        this.shareStats = !this.shareStats;
+        this.toggleShare(this.shareStats);
+      })
       this.MineRow('关于', '今夜星 v1.0.0', () => {})
 
       Blank()
