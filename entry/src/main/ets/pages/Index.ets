@@ -413,16 +413,6 @@ struct Index {
     }, 200);
   }
 
-  /** 「你在这里」标记 */
-  private dropHomeMarker(ctrl: map.MapComponentController): void {
-    const opts: mapCommon.MarkerOptions = {
-      position: { latitude: this.myLat(), longitude: this.myLon() },
-      title: this.userLat !== 0 ? '我的位置' : (this.cityName2 + '（城市中心）'),
-      clickable: false
-    };
-    ctrl.addMarker(opts).catch(() => {});
-  }
-
   /** 在地图上画 4×4 指数色块 */
   /** 按当前视野取景：跨度由 zoom 决定，7×7 采样 → 18×18 插值色场 */
   private async drawIndexGrid(ctrl: map.MapComponentController): Promise<void> {
@@ -475,8 +465,7 @@ struct Index {
       }
 
       await ctrl.clear();
-      this.dropHomeMarker(ctrl);
-
+  
       const M: number = 40;
       let dense: GridPoint[];
       if (spanKm > 5000) {
@@ -620,7 +609,6 @@ struct Index {
       return;
     }
     await ctrl.clear();
-    this.dropHomeMarker(ctrl);
     let drawn: number = 0;
     for (let i = 0; i < cities.length; i += 12) {
       const batch: ApiGridPoint[] = cities.slice(i, i + 12);
