@@ -147,7 +147,7 @@ export class IndexGrid {
   }
 
   /** 一个点的今夜分数（复用正式评分，不是另一套公式） */
-  private static scoreAt(day: DayData, lat: number, lon: number, bortle: number,
+  static scoreAt(day: DayData, lat: number, lon: number, bortle: number,
     ymd: number[]): ScoreResult {
     const city: City = new City('', lat, lon, bortle);
     let best: ScoreResult | null = null;

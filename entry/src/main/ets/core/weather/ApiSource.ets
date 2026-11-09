@@ -87,8 +87,27 @@ export class ApiSource {
     const pts: Record<string, Object>[] = j['points'] as Record<string, Object>[];
     if (pts === undefined || pts.length === 0) return null;
     const hours: Record<string, Object>[] = pts[0]['hours'] as Record<string, Object>[];
-    if (hours === undefined || hours.length === 0) return null;
+    if (hours === undefined || hours === null || hours.length === 0) return null;
     return ApiSource.toDay(hours);
+  }
+
+  /** 世界视图：按城市点取数（海面太密会全是 400） */
+  static async world(): Promise<ApiGridPoint[]> {
+    const j: Record<string, Object> | null = await ApiSource.get('/v1/world');
+    const out: ApiGridPoint[] = [];
+    if (j === null) return out;
+    const pts: Record<string, Object>[] = j['points'] as Record<string, Object>[];
+    if (pts === undefined) return out;
+    for (const p of pts) {
+      const hours: Record<string, Object>[] = p['hours'] as Record<string, Object>[];
+      if (hours === undefined || hours === null || hours.length === 0) continue;
+      const g: ApiGridPoint = new ApiGridPoint();
+      g.lat = Number(p['lat']);
+      g.lon = Number(p['lon']);
+      g.day = ApiSource.toDay(hours);
+      out.push(g);
+    }
+    return out;
   }
 
   /** 一次取回整片网格 */
@@ -105,7 +124,8 @@ export class ApiSource {
       g.lat = Number(p['lat']);
       g.lon = Number(p['lon']);
       const hours: Record<string, Object>[] = p['hours'] as Record<string, Object>[];
-      g.day = (hours === undefined || hours.length === 0) ? null : ApiSource.toDay(hours);
+      g.day = (hours === undefined || hours === null || hours.length === 0)
+        ? null : ApiSource.toDay(hours);
       out.push(g);
     }
     return out;

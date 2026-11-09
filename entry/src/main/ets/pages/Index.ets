@@ -7,6 +7,7 @@ import { FeedbackUploader } from '../common/FeedbackUploader';
 import { WeatherRepo } from '../core/weather/WeatherRepo';
 import { WeatherBundle } from '../core/weather/WeatherTypes';
 import { GridPoint, IndexGrid } from '../core/map/IndexGrid';
+import { ApiGridPoint, ApiSource } from '../core/weather/ApiSource';
 import { Logger } from '../common/Logger';
 import { ScoreGauge } from '../view/ScoreGauge';
 import { common } from '@kit.AbilityKit';
@@ -432,7 +433,7 @@ struct Index {
       const pos: mapCommon.CameraPosition = ctrl.getCameraPosition();
       const zoom: number = pos.zoom;
       // 视野宽度（km）随 zoom 变化，缩放到全国时跨度自然变大
-      const spanKm: number = Math.max(150, Math.min(4500, 42000 / Math.pow(2, zoom)));
+      const spanKm: number = Math.max(150, Math.min(20000, 42000 / Math.pow(2, zoom)));
       const lat: number = pos.target.latitude;
       const lon: number = pos.target.longitude;
       this.lastSampleLat = lat;
@@ -441,10 +442,16 @@ struct Index {
       this.lastSampleTs = Date.now();
       this.sampleCount = this.sampleCount + 1;
 
-      const n: number = 7;
+      const n: number = spanKm > 5000 ? 9 : 7;
       const dLat: number = spanKm / 111.0;
       const dLon: number = spanKm / (111.0 * Math.cos(lat * Math.PI / 180));
       const ctx: common.Context = getContext(this) as common.Context;
+
+      if (spanKm > 5000) {
+        await this.paintWorldDots(ctrl);
+        return;
+      }
+
       const pts: GridPoint[] = await IndexGrid.buildBounds(
         ctx, lat - dLat / 2, lat + dLat / 2, lon - dLon / 2, lon + dLon / 2, n, this.vm.ymd);
       this.gridPts = pts;
@@ -470,8 +477,22 @@ struct Index {
       await ctrl.clear();
       this.dropHomeMarker(ctrl);
 
-      const M: number = 18;
-      const dense: GridPoint[] = IndexGrid.interpolate(pts, n, M);
+      const M: number = 40;
+      let dense: GridPoint[];
+      if (spanKm > 5000) {
+        dense = await this.buildWorldField(lat, lon, dLat, dLon, M);
+        if (dense.length === 0) {
+          this.gridHint = '这一带取不到预报';
+          return;
+        }
+      } else {
+        dense = IndexGrid.interpolate(pts, n, M);
+      }
+      await this.paintField(ctrl, dense, M, lat, lon, dLat, dLon);
+      this.gridHint = '跨度 ' + Math.round(spanKm).toString() + ' km · '
+        + okPts.length.toString() + '/' + pts.length.toString() + ' 点';
+      return;
+
       // 格子大小直接由插值后的密网格间距决定，两端算法再不同也不会错位
       const rowStep: number = M < dense.length
         ? Math.abs(dense[M].lat - dense[0].lat) : (dLat / (M - 1));
@@ -502,12 +523,123 @@ struct Index {
       }
       this.gridHint = '跨度 ' + Math.round(spanKm).toString() + ' km · '
         + okPts.length.toString() + '/' + pts.length.toString() + ' 点'
-        + (spanKm >= 4400 ? ' · 已达数据上限' : '');
+
     } catch (e) {
-      this.gridHint = '取数失败';
+      const err = e as Error;
+      console.error('NightWindow grid error: ' + err.message + ' | ' + (err.stack ?? ''));
+      this.gridHint = '取数失败 · ' + err.message;
     } finally {
       this.gridLoading = false;
     }
+  }
+
+  /** 把密网格画成连续色场 */
+  private async paintField(ctrl: map.MapComponentController, dense: GridPoint[], M: number,
+    lat: number, lon: number, dLat: number, dLon: number): Promise<void> {
+    const rowStep: number = M < dense.length
+      ? Math.abs(dense[M].lat - dense[0].lat) : (dLat / (M - 1));
+    const colStep: number = M > 1 ? Math.abs(dense[1].lon - dense[0].lon) : (dLon / (M - 1));
+    const halfLat: number = rowStep * 0.5;
+    const halfLon: number = colStep * 0.5;
+    for (let i = 0; i < dense.length; i += 24) {
+      const batch: GridPoint[] = dense.slice(i, i + 24);
+      const jobs: Promise<void>[] = batch.map((g: GridPoint) => {
+        const rr: number = Math.max(
+          Math.abs(g.lat - lat) / (dLat / 2),
+          Math.abs(g.lon - lon) / (dLon / 2));
+        const a: number = Math.round(0xDC - 0xC4 * Math.min(1, rr));
+        const opts: mapCommon.MapPolygonOptions = {
+          points: [
+            { latitude: g.lat - halfLat, longitude: g.lon - halfLon },
+            { latitude: g.lat - halfLat, longitude: g.lon + halfLon },
+            { latitude: g.lat + halfLat, longitude: g.lon + halfLon },
+            { latitude: g.lat + halfLat, longitude: g.lon - halfLon }
+          ],
+          fillColor: (a << 24) | this.scoreRgb(g.score),
+          strokeWidth: 0,
+          zIndex: 5
+        };
+        return ctrl.addPolygon(opts).then(() => {}).catch(() => {});
+      });
+      await Promise.all(jobs);
+    }
+  }
+
+  /** 世界视图：取城市点后用反距离加权铺成连续面 */
+  private async buildWorldField(lat: number, lon: number, dLat: number, dLon: number,
+    M: number): Promise<GridPoint[]> {
+    const cities: ApiGridPoint[] = await ApiSource.world();
+    if (cities.length < 4) return [];
+    const seeds: GridPoint[] = [];
+    for (const c of cities) {
+      if (c.day === null) continue;
+      const g: GridPoint = new GridPoint();
+      g.lat = c.lat;
+      g.lon = c.lon;
+      g.bortle = 5;
+      const r: ScoreResult = IndexGrid.scoreAt(c.day, c.lat, c.lon, 5, this.vm.ymd);
+      g.score = r.total;
+      g.ok = true;
+      seeds.push(g);
+    }
+    if (seeds.length < 4) return [];
+
+    const out: GridPoint[] = [];
+    const latMin: number = lat - dLat / 2;
+    const lonMin: number = lon - dLon / 2;
+    for (let i = 0; i < M; i++) {
+      for (let j = 0; j < M; j++) {
+        const pLat: number = latMin + dLat * i / (M - 1);
+        const pLon: number = lonMin + dLon * j / (M - 1);
+        let num: number = 0;
+        let den: number = 0;
+        for (const sd of seeds) {
+          const dx: number = (pLon - sd.lon) * Math.cos(pLat * Math.PI / 180);
+          const dy: number = pLat - sd.lat;
+          const d2: number = dx * dx + dy * dy + 0.5;
+          const w: number = 1 / (d2 * d2);
+          num += sd.score * w;
+          den += w;
+        }
+        const g: GridPoint = new GridPoint();
+        g.lat = pLat;
+        g.lon = pLon;
+        g.score = den > 0 ? num / den : 0;
+        g.ok = true;
+        out.push(g);
+      }
+    }
+    return out;
+  }
+
+  /** 世界视图：按城市点着色（全球连续插值需要上万采样点，配额撑不住） */
+  private async paintWorldDots(ctrl: map.MapComponentController): Promise<void> {
+    const cities: ApiGridPoint[] = await ApiSource.world();
+    if (cities.length === 0) {
+      this.gridHint = '网络异常 · 稍后再试';
+      return;
+    }
+    await ctrl.clear();
+    this.dropHomeMarker(ctrl);
+    let drawn: number = 0;
+    for (let i = 0; i < cities.length; i += 12) {
+      const batch: ApiGridPoint[] = cities.slice(i, i + 12);
+      const jobs: Promise<void>[] = batch.map((c: ApiGridPoint) => {
+        if (c.day === null) return Promise.resolve();
+        const r: ScoreResult = IndexGrid.scoreAt(c.day, c.lat, c.lon, 5, this.vm.ymd);
+        drawn++;
+        const opts: mapCommon.MapCircleOptions = {
+          center: { latitude: c.lat, longitude: c.lon },
+          radius: 55000,
+          fillColor: (0xC8 << 24) | this.scoreRgb(r.total),
+          strokeWidth: 0,
+          zIndex: 5
+        };
+        return ctrl.addCircle(opts).then(() => {}).catch(() => {});
+      });
+      await Promise.all(jobs);
+    }
+    this.gridHint = '全球 ' + drawn.toString() + ' 城';
   }
 
   /** 镜头停下后按需重采样（限频，保护配额） */
@@ -519,7 +651,7 @@ struct Index {
   private maybeResample(ctrl: map.MapComponentController): void {
     if (this.gridLoading) return;
     const pos: mapCommon.CameraPosition = ctrl.getCameraPosition();
-    const spanKm: number = Math.max(150, Math.min(4500, 42000 / Math.pow(2, pos.zoom)));
+    const spanKm: number = Math.max(150, Math.min(20000, 42000 / Math.pow(2, pos.zoom)));
     const moved: number = distanceKm(this.lastSampleLat, this.lastSampleLon,
       pos.target.latitude, pos.target.longitude);
 
