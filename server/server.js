@@ -139,6 +139,44 @@ function simplify(h) {
   };
 }
 
+
+// ---- 上游（和风天气）调用计数：用于观察免费额度余量 ----
+const QW_USAGE_FILE = process.env.NW_USAGE_FILE || '/var/lib/nightwindow/qw-usage.json';
+const qwUsage = { day: '', dayCalls: 0, month: '', monthCalls: 0 };
+
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function monthStr() { return new Date().toISOString().slice(0, 7); }
+
+function loadUsage() {
+  try {
+    const raw = JSON.parse(require('fs').readFileSync(QW_USAGE_FILE, 'utf8'));
+    Object.assign(qwUsage, raw);
+  } catch (e) { /* 首次运行没有文件 */ }
+  if (qwUsage.day !== todayStr()) { qwUsage.day = todayStr(); qwUsage.dayCalls = 0; }
+  if (qwUsage.month !== monthStr()) { qwUsage.month = monthStr(); qwUsage.monthCalls = 0; }
+}
+
+let usageDirty = false;
+function countUpstream() {
+  const d = todayStr();
+  const m = monthStr();
+  if (qwUsage.day !== d) { qwUsage.day = d; qwUsage.dayCalls = 0; }
+  if (qwUsage.month !== m) { qwUsage.month = m; qwUsage.monthCalls = 0; }
+  qwUsage.dayCalls += 1;
+  qwUsage.monthCalls += 1;
+  usageDirty = true;
+}
+
+function saveUsage() {
+  if (!usageDirty) return;
+  usageDirty = false;
+  try {
+    const tmp = QW_USAGE_FILE + '.tmp';
+    require('fs').writeFileSync(tmp, JSON.stringify(qwUsage, null, 2));
+    require('fs').renameSync(tmp, QW_USAGE_FILE);
+  } catch (e) { log('usage save failed', e.message); }
+}
+
 async function fetchPoint(lat, lon) {
   const key = round05(lat) + ',' + round05(lon);
   const hit = cache.get(key);
@@ -153,6 +191,7 @@ async function fetchPoint(lat, lon) {
   if (neg && now - neg < NEG_TTL) return null;
 
   const loc = round05(lon).toFixed(2) + ',' + round05(lat).toFixed(2);
+  countUpstream();
   const url = 'https://' + QW_HOST + '/v7/weather/24h?location=' + loc + '&key=' + QW_KEY;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 8000);
@@ -199,6 +238,7 @@ async function fetchWeek(lat, lon) {
     return { hours: hit.hours, ts: hit.ts };
   }
   const loc = round05(lon).toFixed(2) + ',' + round05(lat).toFixed(2);
+  countUpstream();
   const url = 'https://' + QW_HOST + '/v7/weather/168h?location=' + loc + '&key=' + QW_KEY;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 12000);
@@ -327,7 +367,11 @@ const server = http.createServer(async (req, res) => {
     res.end(s);
   };
 
-  if (u.pathname === '/healthz') return send(200, { ok: true, up: process.uptime() });
+  if (u.pathname === '/healthz') {
+    return send(200, { ok: true, up: process.uptime(),
+      qw: { day: qwUsage.day, dayCalls: qwUsage.dayCalls,
+            month: qwUsage.month, monthCalls: qwUsage.monthCalls } });
+  }
   if (!allow(ip)) return send(429, { ok: false, error: 'rate_limited' });
 
   try {
@@ -342,13 +386,17 @@ const server = http.createServer(async (req, res) => {
 });
 
 loadCache();
+loadUsage();
+setInterval(saveUsage, 30000).unref();
 
-server.listen(PORT, '127.0.0.1', () => log('nightwindow-api listening on', PORT, 'cache keys', cache.size));
+server.listen(PORT, '127.0.0.1', () => log('nightwindow-api listening on', PORT,
+  'cache keys', cache.size, 'qwd', qwUsage.dayCalls));
 
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     log('shutting down, flushing cache', sig);
     saveNow();
+    saveUsage();
     process.exit(0);
   });
 }
