@@ -9,6 +9,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
+const { ExpiringCache, createRateLimiter, parseTrustedProxy, clientIp,
+  readNumber, readCoordinates, createUpstreamScheduler } = require('./limits');
 
 const PORT = Number(process.env.NW_PORT || 8090);
 const QW_HOST = process.env.QW_HOST || 'mn6hf38tay.re.qweatherapi.com';
@@ -17,6 +19,8 @@ const TTL_MS = Number(process.env.NW_TTL_MS || 30 * 60 * 1000);
 const MAX_KEYS = 800;
 const CACHE_FILE = process.env.NW_CACHE_FILE || '/var/lib/nightwindow/wx-cache.json';
 const CACHE_VERSION = 1;
+const TRUSTED_PROXY = parseTrustedProxy(process.env.NW_TRUSTED_PROXY);
+const runUpstream = createUpstreamScheduler();
 
 
 // 世界主要城市/暗夜地（世界视图用；点太密会烧配额，75 个足够铺出格局）
@@ -49,12 +53,12 @@ const WORLD_CITIES = [
 ];
 
 const cache = new Map(); // key -> {ts, hours}
-const negCache = new Map(); // key -> ts（失败点短期不再重试）
 const weekCache = new Map(); // key -> {ts, hours}  7 天逐时，TTL 更长
 const WEEK_TTL = 3 * 60 * 60 * 1000;
 const WEEK_MAX = 60;
 const NEG_TTL = 10 * 60 * 1000;
-const ipHits = new Map(); // ip -> {ts, count}
+const negCache = new ExpiringCache(800, NEG_TTL);
+const allow = createRateLimiter();
 
 /** 启动时把上次落盘的缓存读回来，重启不再冷启动 */
 function loadCache() {
@@ -67,7 +71,10 @@ function loadCache() {
       const v = obj.items[k];
       const ttl = k.startsWith('w:') ? WEEK_TTL : TTL_MS;
       if (v && typeof v.ts === 'number' && Array.isArray(v.hours) && now - v.ts < ttl) {
-        (k.startsWith('w:') ? weekCache : cache).set(k, { ts: v.ts, hours: v.hours });
+        const target = k.startsWith('w:') ? weekCache : cache;
+        const maximum = k.startsWith('w:') ? WEEK_MAX : MAX_KEYS;
+        if (target.size >= maximum) continue;
+        target.set(k, { ts: v.ts, hours: v.hours });
         n++;
       }
     }
@@ -108,22 +115,11 @@ function saveNow() {
 
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 
-function clientIp(req) {
-  const xf = req.headers['x-forwarded-for'];
-  if (typeof xf === 'string' && xf.length) return xf.split(',')[0].trim();
-  return req.socket.remoteAddress || 'unknown';
-}
-
-/** 简单限流：每 IP 每小时 120 次 */
-function allow(ip) {
-  const now = Date.now();
-  let rec = ipHits.get(ip);
-  if (!rec || now - rec.ts > 3600 * 1000) { rec = { ts: now, count: 0 }; ipHits.set(ip, rec); }
-  rec.count++;
-  return rec.count <= 120;
-}
-
 function round05(v) { return Math.round(v * 2) / 2; }
+
+function supportedCoordinates(lat, lon) {
+  return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 85 && Math.abs(lon) <= 180;
+}
 
 function simplify(h) {
   return {
@@ -178,6 +174,7 @@ function saveUsage() {
 }
 
 async function fetchPoint(lat, lon) {
+  if (!supportedCoordinates(lat, lon)) return null;
   const key = round05(lat) + ',' + round05(lon);
   const hit = cache.get(key);
   const now = Date.now();
@@ -187,9 +184,13 @@ async function fetchPoint(lat, lon) {
     cache.set(key, hit);
     return { hours: hit.hours, ts: hit.ts };
   }
-  const neg = negCache.get(key);
-  if (neg && now - neg < NEG_TTL) return null;
+  if (negCache.get(key)) return null;
 
+  return runUpstream(key, () => requestPoint(lat, lon, key));
+}
+
+async function requestPoint(lat, lon, key) {
+  const now = Date.now();
   const loc = round05(lon).toFixed(2) + ',' + round05(lat).toFixed(2);
   countUpstream();
   const url = 'https://' + QW_HOST + '/v7/weather/24h?location=' + loc + '&key=' + QW_KEY;
@@ -198,14 +199,15 @@ async function fetchPoint(lat, lon) {
   try {
     const res = await fetch(url, { signal: ac.signal, headers: { 'Accept-Encoding': 'identity' } });
     if (!res.ok) {
+      if (res.body) await res.body.cancel();
       // 400 = 和风不支持该坐标（海面/境外），属正常，短期不再重试
-      if (res.status === 400) negCache.set(key, Date.now());
+      if (res.status === 400) negCache.set(key, true);
       else log('upstream http', res.status, loc);
       return null;
     }
     const body = await res.json();
     if (body.code !== '200' || !Array.isArray(body.hourly)) {
-      if (body.code === '204' || body.code === '404') negCache.set(key, Date.now());
+      if (body.code === '204' || body.code === '404') negCache.set(key, true);
       else log('upstream code', body.code, loc);
       return null;
     }
@@ -237,6 +239,11 @@ async function fetchWeek(lat, lon) {
     weekCache.set(key, hit);
     return { hours: hit.hours, ts: hit.ts };
   }
+  return runUpstream(key, () => requestWeek(lat, lon, key));
+}
+
+async function requestWeek(lat, lon, key) {
+  const now = Date.now();
   const loc = round05(lon).toFixed(2) + ',' + round05(lat).toFixed(2);
   countUpstream();
   const url = 'https://' + QW_HOST + '/v7/weather/168h?location=' + loc + '&key=' + QW_KEY;
@@ -244,7 +251,11 @@ async function fetchWeek(lat, lon) {
   const timer = setTimeout(() => ac.abort(), 12000);
   try {
     const res = await fetch(url, { signal: ac.signal, headers: { 'Accept-Encoding': 'identity' } });
-    if (!res.ok) { log('week http', res.status, loc); return null; }
+    if (!res.ok) {
+      if (res.body) await res.body.cancel();
+      log('week http', res.status, loc);
+      return null;
+    }
     const body = await res.json();
     if (body.code !== '200' || !Array.isArray(body.hourly)) { log('week code', body.code, loc); return null; }
     const hours = body.hourly.map(simplify);
@@ -265,9 +276,7 @@ async function fetchWeek(lat, lon) {
 }
 
 async function handleWeek(u) {
-  const lat = Number(u.searchParams.get('lat'));
-  const lon = Number(u.searchParams.get('lon'));
-  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 85) throw new Error('bad lat/lon');
+  const { lat, lon } = readCoordinates(u.searchParams);
   const got = await fetchWeek(lat, lon);
   if (!got) return { ok: false, points: [] };
   const age = Math.max(0, Math.round((Date.now() - got.ts) / 1000));
@@ -289,16 +298,18 @@ function buildGrid(lat, lon, spanKm, n) {
 }
 
 async function handleGrid(u) {
-  const lat = Number(u.searchParams.get('lat'));
-  const lon = Number(u.searchParams.get('lon'));
-  const span = Math.min(5000, Math.max(100, Number(u.searchParams.get('span') || 150)));
-  const n = Math.min(9, Math.max(3, Number(u.searchParams.get('n') || 7)));
-  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 85) throw new Error('bad lat/lon');
+  const { lat, lon } = readCoordinates(u.searchParams);
+  const span = readNumber(u.searchParams, 'span', 100, 5000, 150);
+  const n = readNumber(u.searchParams, 'n', 3, 9, 7, true);
 
   const pts = buildGrid(lat, lon, span, n);
   // 去重：同一 0.5° 只取一次上游
   const uniq = new Map();
-  for (const p of pts) uniq.set(round05(p.lat) + ',' + round05(p.lon), p);
+  for (const point of pts) {
+    if (supportedCoordinates(point.lat, point.lon)) {
+      uniq.set(round05(point.lat) + ',' + round05(point.lon), point);
+    }
+  }
   const keys = Array.from(uniq.keys());
   const out = new Map();
 
@@ -315,7 +326,8 @@ async function handleGrid(u) {
   const nowMs = Date.now();
   let oldestSec = 0;
   const points = pts.map((p) => {
-    const got = out.get(round05(p.lat) + ',' + round05(p.lon)) || null;
+    const got = supportedCoordinates(p.lat, p.lon)
+      ? out.get(round05(p.lat) + ',' + round05(p.lon)) || null : null;
     const age = got ? Math.max(0, Math.round((nowMs - got.ts) / 1000)) : null;
     if (age !== null && age > oldestSec) oldestSec = age;
     return {
@@ -346,17 +358,14 @@ async function handleWorld() {
 }
 
 async function handleWx(u) {
-  const lat = Number(u.searchParams.get('lat'));
-  const lon = Number(u.searchParams.get('lon'));
-  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 85) throw new Error('bad lat/lon');
+  const { lat, lon } = readCoordinates(u.searchParams);
   const got = await fetchPoint(lat, lon);
   const age = got ? Math.max(0, Math.round((Date.now() - got.ts) / 1000)) : null;
   return { ok: !!got, oldestAge: age ?? 0, points: [{ lat, lon, age, hours: got ? got.hours : null }] };
 }
 
 const server = http.createServer(async (req, res) => {
-  const u = new URL(req.url, 'http://x');
-  const ip = clientIp(req);
+  const ip = clientIp(req, TRUSTED_PROXY);
   const send = (code, obj) => {
     const s = JSON.stringify(obj);
     res.writeHead(code, {
@@ -367,14 +376,14 @@ const server = http.createServer(async (req, res) => {
     res.end(s);
   };
 
-  if (u.pathname === '/healthz') {
-    return send(200, { ok: true, up: process.uptime(),
-      qw: { day: qwUsage.day, dayCalls: qwUsage.dayCalls,
-            month: qwUsage.month, monthCalls: qwUsage.monthCalls } });
-  }
-  if (!allow(ip)) return send(429, { ok: false, error: 'rate_limited' });
-
   try {
+    const u = new URL(req.url, 'http://x');
+    if (u.pathname === '/healthz') {
+      return send(200, { ok: true, up: process.uptime(),
+        qw: { day: qwUsage.day, dayCalls: qwUsage.dayCalls,
+              month: qwUsage.month, monthCalls: qwUsage.monthCalls } });
+    }
+    if (!allow(ip)) return send(429, { ok: false, error: 'rate_limited' });
     if (u.pathname === '/v1/wx') return send(200, await handleWx(u));
     if (u.pathname === '/v1/grid') return send(200, await handleGrid(u));
     if (u.pathname === '/v1/world') return send(200, await handleWorld());
@@ -385,18 +394,23 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-loadCache();
-loadUsage();
-setInterval(saveUsage, 30000).unref();
+server.on('close', () => clearTimeout(saveTimer));
 
-server.listen(PORT, '127.0.0.1', () => log('nightwindow-api listening on', PORT,
-  'cache keys', cache.size, 'qwd', qwUsage.dayCalls));
+if (require.main === module) {
+  loadCache();
+  loadUsage();
+  setInterval(saveUsage, 30000).unref();
+  server.listen(PORT, '127.0.0.1', () => log('nightwindow-api listening on', PORT,
+    'cache keys', cache.size, 'qwd', qwUsage.dayCalls));
 
-for (const sig of ['SIGTERM', 'SIGINT']) {
-  process.on(sig, () => {
-    log('shutting down, flushing cache', sig);
-    saveNow();
-    saveUsage();
-    process.exit(0);
-  });
+  for (const sig of ['SIGTERM', 'SIGINT']) {
+    process.on(sig, () => {
+      log('shutting down, flushing cache', sig);
+      saveNow();
+      saveUsage();
+      process.exit(0);
+    });
+  }
 }
+
+module.exports = { server };
