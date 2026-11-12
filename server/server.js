@@ -9,6 +9,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
+const { UpstreamQuota } = require('./quota');
 const { ExpiringCache, createRateLimiter, parseTrustedProxy, clientIp,
   readNumber, readCoordinates, createUpstreamScheduler } = require('./limits');
 
@@ -138,40 +139,11 @@ function simplify(h) {
 
 // ---- 上游（和风天气）调用计数：用于观察免费额度余量 ----
 const QW_USAGE_FILE = process.env.NW_USAGE_FILE || '/var/lib/nightwindow/qw-usage.json';
-const qwUsage = { day: '', dayCalls: 0, month: '', monthCalls: 0 };
-
-function todayStr() { return new Date().toISOString().slice(0, 10); }
-function monthStr() { return new Date().toISOString().slice(0, 7); }
-
-function loadUsage() {
-  try {
-    const raw = JSON.parse(require('fs').readFileSync(QW_USAGE_FILE, 'utf8'));
-    Object.assign(qwUsage, raw);
-  } catch (e) { /* 首次运行没有文件 */ }
-  if (qwUsage.day !== todayStr()) { qwUsage.day = todayStr(); qwUsage.dayCalls = 0; }
-  if (qwUsage.month !== monthStr()) { qwUsage.month = monthStr(); qwUsage.monthCalls = 0; }
-}
-
-let usageDirty = false;
-function countUpstream() {
-  const d = todayStr();
-  const m = monthStr();
-  if (qwUsage.day !== d) { qwUsage.day = d; qwUsage.dayCalls = 0; }
-  if (qwUsage.month !== m) { qwUsage.month = m; qwUsage.monthCalls = 0; }
-  qwUsage.dayCalls += 1;
-  qwUsage.monthCalls += 1;
-  usageDirty = true;
-}
-
-function saveUsage() {
-  if (!usageDirty) return;
-  usageDirty = false;
-  try {
-    const tmp = QW_USAGE_FILE + '.tmp';
-    require('fs').writeFileSync(tmp, JSON.stringify(qwUsage, null, 2));
-    require('fs').renameSync(tmp, QW_USAGE_FILE);
-  } catch (e) { log('usage save failed', e.message); }
-}
+const quota = new UpstreamQuota(QW_USAGE_FILE, {
+  daily: Number(process.env.NW_DAILY_LIMIT || 2000),
+  hourly: Number(process.env.NW_HOURLY_LIMIT || 200),
+  minute: Number(process.env.NW_MINUTE_LIMIT || 90)
+});
 
 async function fetchPoint(lat, lon) {
   if (!supportedCoordinates(lat, lon)) return null;
@@ -192,7 +164,7 @@ async function fetchPoint(lat, lon) {
 async function requestPoint(lat, lon, key) {
   const now = Date.now();
   const loc = round05(lon).toFixed(2) + ',' + round05(lat).toFixed(2);
-  countUpstream();
+  if (!quota.reserve('24h')) return null;
   const url = 'https://' + QW_HOST + '/v7/weather/24h?location=' + loc + '&key=' + QW_KEY;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 8000);
@@ -201,14 +173,16 @@ async function requestPoint(lat, lon, key) {
     if (!res.ok) {
       if (res.body) await res.body.cancel();
       // 400 = 和风不支持该坐标（海面/境外），属正常，短期不再重试
-      if (res.status === 400) negCache.set(key, true);
-      else log('upstream http', res.status, loc);
+      negCache.set(key, true);
+      if (res.status === 429) quota.backoff(res.headers?.get('retry-after'));
+      else log('upstream http', res.status);
       return null;
     }
     const body = await res.json();
     if (body.code !== '200' || !Array.isArray(body.hourly)) {
-      if (body.code === '204' || body.code === '404') negCache.set(key, true);
-      else log('upstream code', body.code, loc);
+      negCache.set(key, true);
+      if (body.code === '429') quota.backoff();
+      else log('upstream code', body.code);
       return null;
     }
     const hours = body.hourly.map(simplify);
@@ -222,7 +196,8 @@ async function requestPoint(lat, lon, key) {
     scheduleSave();
     return { hours, ts: now };
   } catch (e) {
-    log('fetch fail', loc, e.message);
+    negCache.set(key, true);
+    log('fetch fail', e.name);
     return null;
   } finally {
     clearTimeout(timer);
@@ -239,13 +214,14 @@ async function fetchWeek(lat, lon) {
     weekCache.set(key, hit);
     return { hours: hit.hours, ts: hit.ts };
   }
+  if (negCache.get(key)) return null;
   return runUpstream(key, () => requestWeek(lat, lon, key));
 }
 
 async function requestWeek(lat, lon, key) {
   const now = Date.now();
   const loc = round05(lon).toFixed(2) + ',' + round05(lat).toFixed(2);
-  countUpstream();
+  if (!quota.reserve('168h')) return null;
   const url = 'https://' + QW_HOST + '/v7/weather/168h?location=' + loc + '&key=' + QW_KEY;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 12000);
@@ -253,11 +229,18 @@ async function requestWeek(lat, lon, key) {
     const res = await fetch(url, { signal: ac.signal, headers: { 'Accept-Encoding': 'identity' } });
     if (!res.ok) {
       if (res.body) await res.body.cancel();
-      log('week http', res.status, loc);
+      negCache.set(key, true);
+      if (res.status === 429) quota.backoff(res.headers?.get('retry-after'));
+      log('week http', res.status);
       return null;
     }
     const body = await res.json();
-    if (body.code !== '200' || !Array.isArray(body.hourly)) { log('week code', body.code, loc); return null; }
+    if (body.code !== '200' || !Array.isArray(body.hourly)) {
+      negCache.set(key, true);
+      if (body.code === '429') quota.backoff();
+      log('week code', body.code);
+      return null;
+    }
     const hours = body.hourly.map(simplify);
     while (weekCache.size >= WEEK_MAX) {
       const oldest = weekCache.keys().next().value;
@@ -268,7 +251,8 @@ async function requestWeek(lat, lon, key) {
     scheduleSave();
     return { hours, ts: now };
   } catch (e) {
-    log('week fail', loc, e.message);
+    negCache.set(key, true);
+    log('week fail', e.name);
     return null;
   } finally {
     clearTimeout(timer);
@@ -380,8 +364,7 @@ const server = http.createServer(async (req, res) => {
     const u = new URL(req.url, 'http://x');
     if (u.pathname === '/healthz') {
       return send(200, { ok: true, up: process.uptime(),
-        qw: { day: qwUsage.day, dayCalls: qwUsage.dayCalls,
-              month: qwUsage.month, monthCalls: qwUsage.monthCalls } });
+      qw: quota.snapshot() });
     }
     if (!allow(ip)) return send(429, { ok: false, error: 'rate_limited' });
     if (u.pathname === '/v1/wx') return send(200, await handleWx(u));
@@ -398,16 +381,13 @@ server.on('close', () => clearTimeout(saveTimer));
 
 if (require.main === module) {
   loadCache();
-  loadUsage();
-  setInterval(saveUsage, 30000).unref();
   server.listen(PORT, '127.0.0.1', () => log('nightwindow-api listening on', PORT,
-    'cache keys', cache.size, 'qwd', qwUsage.dayCalls));
+    'cache keys', cache.size, 'qwd', quota.snapshot().dayCalls));
 
   for (const sig of ['SIGTERM', 'SIGINT']) {
     process.on(sig, () => {
       log('shutting down, flushing cache', sig);
       saveNow();
-      saveUsage();
       process.exit(0);
     });
   }

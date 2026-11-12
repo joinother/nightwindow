@@ -10,8 +10,10 @@ const { setTimeout: delay } = require('node:timers/promises');
 
 test('HTTP contracts and upstream protection with mocked weather provider', async (context) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'nightwindow-test-'));
-  const previousEnv = { NW_CACHE_FILE: process.env.NW_CACHE_FILE, NW_TRUSTED_PROXY: process.env.NW_TRUSTED_PROXY };
+  const previousEnv = { NW_CACHE_FILE: process.env.NW_CACHE_FILE, NW_TRUSTED_PROXY: process.env.NW_TRUSTED_PROXY,
+    NW_USAGE_FILE: process.env.NW_USAGE_FILE };
   process.env.NW_CACHE_FILE = path.join(directory, 'cache.json');
+  process.env.NW_USAGE_FILE = path.join(directory, 'usage.json');
   process.env.NW_TRUSTED_PROXY = '';
   const { server } = require('./server');
   const calls = [];
@@ -134,6 +136,9 @@ test('HTTP contracts and upstream protection with mocked weather provider', asyn
     assert.equal(calls.length, 1);
     const week = await request('/v1/week?lat=50&lon=50');
     assert.deepEqual(week, { status: 200, body: { ok: false, points: [] } });
+    const beforeRepeat = calls.length;
+    await request('/v1/week?lat=50&lon=50');
+    assert.equal(calls.length, beforeRepeat);
     assert.equal(active, 0);
     fail = false;
   });
